@@ -161,8 +161,10 @@ class DietaryTag(db.Model):
             tag = DietaryTag.get_or_create(label)
             if tag:
                 tags.append(tag)
+        old_tag_ids = {t.id for t in owner.dietary_tags}
+        new_tag_ids = {t.id for t in tags}
         owner.dietary_tags = tags
-        if hasattr(owner, "dietary_tags_updated_at"):
+        if hasattr(owner, "dietary_tags_updated_at") and old_tag_ids != new_tag_ids:
             owner.dietary_tags_updated_at = datetime.utcnow()
 
     def __repr__(self):
