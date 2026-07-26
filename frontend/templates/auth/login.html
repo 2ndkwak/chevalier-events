@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sign In — Chevalier Events{% endblock %}
+
+{% block content %}
+<div style="max-width:420px; margin:2.5rem auto;">
+
+  <!-- Crest centrepiece -->
+  <div style="text-align:center; margin-bottom:1.8rem;">
+    <img src="{{ url_for('static', filename='img/Chevalier_Logo.jpg') }}"
+         alt="Confrérie des Chevaliers du Tastevin"
+         style="height:140px; width:auto; filter:drop-shadow(0 4px 10px rgba(30,18,8,.25));">
+    <div style="margin-top:1rem;">
+      <span style="display:block; font-size:.7rem; letter-spacing:.18em; text-transform:uppercase;
+                   color:var(--ink-muted); font-family:sans-serif;">
+        Confrérie des Chevaliers du Tastevin
+      </span>
+      <span style="display:block; font-size:1.4rem; font-weight:normal; letter-spacing:.06em;
+                   color:var(--burgundy-dk); margin-top:.2rem;">
+        Member Portal
+      </span>
+      <span style="display:block; font-style:italic; color:var(--gold); font-size:.85rem;
+                   margin-top:.15rem; letter-spacing:.04em;">
+        Tastevin en main
+      </span>
+    </div>
+  </div>
+
+  <!-- Gold rule -->
+  <hr class="gold-rule" style="margin:1.2rem 0 1.8rem;">
+
+  <div class="card" style="border-top-color:var(--gold);">
+    <form method="POST" action="{{ url_for('auth.login') }}">
+      <div class="form-group" style="margin-bottom:1rem;">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" required autofocus
+               value="{{ request.form.email or '' }}">
+      </div>
+      <div class="form-group" style="margin-bottom:.5rem;">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+      </div>
+      <p style="text-align:right; margin:0 0 1.5rem 0;">
+        <a href="{{ url_for('auth.forgot_password') }}" style="font-size:.82rem; color:var(--ink-muted);">
+          Forgot your password?
+        </a>
+      </p>
+      <button type="submit" class="btn btn-primary" style="width:100%; padding:.6rem;">
+        Sign in
+      </button>
+    </form>
+  </div>
+
+  <p style="text-align:center; font-size:.78rem; color:var(--ink-muted);
+             font-family:sans-serif; margin-top:1rem;">
+    Contact your Grand Sénéchal if you need access.
+  </p>
+</div>
+{% endblock %}

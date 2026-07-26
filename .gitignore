@@ -1,0 +1,11 @@
+instance/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+*.log
+*.bak-*
+*.bak.*
+chevalier_events_v29.zip
+Induction_dates.csv

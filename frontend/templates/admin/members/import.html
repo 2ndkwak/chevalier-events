@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Import Members — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Import members from CSV</h1>
+  <div style="display:flex; gap:.5rem;">
+    <a href="{{ url_for('import_members.download_template') }}"
+       class="btn btn-outline">&#8595; Download CSV template</a>
+    <a href="{{ url_for('members.list_members') }}" class="btn btn-outline">← Back to members</a>
+  </div>
+</div>
+
+{% if not preview %}
+<!-- Step 1: Upload -->
+<div class="card" style="max-width:640px;">
+  <div class="card-title">Upload your CSV file</div>
+  <p class="text-sm text-muted" style="margin-bottom:1rem;">
+    Use the template below to prepare your member list. The file will be
+    previewed before anything is saved to the database.
+  </p>
+
+  <form method="POST" enctype="multipart/form-data"
+        action="{{ url_for('import_members.upload') }}">
+    <input type="hidden" name="action" value="preview">
+    <div class="form-group" style="margin-bottom:1rem;">
+      <label for="csv_file">CSV file</label>
+      <input type="file" id="csv_file" name="csv_file" accept=".csv"
+             style="font-family:sans-serif; font-size:.9rem; padding:.4rem 0;">
+    </div>
+    <button type="submit" class="btn btn-primary">Preview import</button>
+  </form>
+
+  {% if errors %}
+  <div style="margin-top:1rem; background:#F5D5D5; border-left:4px solid var(--danger);
+              padding:.8rem 1rem; border-radius:0 4px 4px 0;">
+    <div style="font-family:sans-serif; font-size:.8rem; font-weight:600;
+                color:var(--danger); margin-bottom:.4rem;">Errors found — please fix and re-upload:</div>
+    {% for e in errors %}
+      <div style="font-family:sans-serif; font-size:.82rem; color:var(--danger);">• {{ e }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Column reference -->
+<div class="card" style="max-width:640px;">
+  <div class="card-title">CSV columns reference</div>
+  <table class="data-table" style="font-size:.82rem;">
+    <thead>
+      <tr><th>Column</th><th>Required</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      {% for col, req, note in [
+        ('person_type',   'No',  'member or partner — defaults to member'),
+        ('title',         'No',  'Dr., Count, Sir, Countess…'),
+        ('first_name',    'Yes', ''),
+        ('last_name',     'Yes', ''),
+        ('suffix',        'No',  'Jr., III…'),
+        ('gender',        'No',  'M, F, or Other'),
+        ('email',         'No',  'Required for portal login'),
+        ('phone',         'No',  ''),
+        ('is_officer',    'No',  'Yes or No'),
+        ('officer_role',  'No',  'Grand Sénéchal, Chancelier…'),
+        ('member_since',  'No',  'YYYY-MM-DD or just YYYY'),
+        ('address_line1', 'No',  ''),
+        ('address_line2', 'No',  ''),
+        ('city',          'No',  ''),
+        ('province_state','No',  ''),
+        ('postal_code',   'No',  ''),
+        ('country',       'No',  ''),
+        ('partner_email', 'No',  'Email of partner record — links them automatically'),
+        ('partner_name',  'No',  'Full name of partner (First Last) — use when partner has no email'),
+        ('notes',         'No',  'Free text'),
+      ] %}
+      <tr>
+        <td style="font-family:monospace; color:var(--burgundy);">{{ col }}</td>
+        <td>{% if req=='Yes' %}<span class="badge badge-burg">Required</span>{% else %}—{% endif %}</td>
+        <td class="text-muted">{{ note }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="text-muted text-sm" style="margin-top:.8rem;">
+    <strong>Partner linking:</strong> To link couples, give each person their own row
+    and put the other person's email in the <code>partner_email</code> column,
+    or their full name in <code>partner_name</code> if they have no email.
+    Both records must be in the same import file.
+  </p>
+</div>
+
+{% else %}
+<!-- Step 2: Preview -->
+<div class="card">
+  <div class="card-title">
+    Preview — {{ preview|length }} record{{ 's' if preview|length != 1 }} ready to import
+  </div>
+  <p class="text-muted text-sm" style="margin-bottom:1rem;">
+    Review the records below. Click <strong>Confirm import</strong> to add them to the database,
+    or go back to make changes.
+  </p>
+
+  <div style="overflow-x:auto;">
+    <table class="data-table" style="font-size:.82rem;">
+      <thead>
+        <tr>
+          <th>Name</th><th>Type</th><th>Gender</th><th>Email</th>
+          <th>Officer</th><th>Member since</th><th>Partner email</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in preview %}
+        <tr>
+          <td>
+            {{ r.title or '' }} {{ r.first_name }} {{ r.last_name }}{{ ', ' + r.suffix if r.suffix else '' }}
+          </td>
+          <td><span class="badge {% if r.person_type=='member' %}badge-burg{% else %}badge-muted{% endif %}">
+            {{ r.person_type }}</span></td>
+          <td>{{ r.gender or '—' }}</td>
+          <td class="text-muted">{{ r.email or '—' }}</td>
+          <td>
+            {% if r.is_officer %}
+              <span class="badge badge-gold">{{ r.officer_role or 'Officer' }}</span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-muted">{{ r.member_since or '—' }}</td>
+          <td class="text-muted">{{ r.partner_email or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Hidden form to confirm -->
+<form method="POST" action="{{ url_for('import_members.upload') }}"
+      style="display:flex; gap:.6rem; margin-top:.5rem;">
+  <input type="hidden" name="action" value="import">
+  <textarea name="csv_data" style="display:none;">{{ csv_raw }}</textarea>
+  <button type="submit" class="btn btn-primary">
+    ✓ Confirm — import {{ preview|length }} records
+  </button>
+  <a href="{{ url_for('import_members.upload') }}" class="btn btn-outline">← Go back</a>
+</form>
+{% endif %}
+
+{% endblock %}

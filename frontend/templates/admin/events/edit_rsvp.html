@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Edit RSVP — {{ rsvp.person.display_name }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Edit RSVP — {{ rsvp.person.display_name }}</h1>
+  <a href="{{ url_for('events.rsvp_list', event_id=event.id) }}" class="btn btn-outline">← Back to RSVPs</a>
+</div>
+
+<div class="card" style="max-width:640px;">
+  <div style="background:var(--parchment); border-radius:4px; padding:.8rem 1rem;
+              margin-bottom:1.2rem; font-family:sans-serif; font-size:.85rem; color:var(--ink-muted);">
+    <strong style="color:var(--burgundy);">{{ event.title }}</strong>
+    &nbsp;·&nbsp; {{ event.event_date.strftime("%B %d, %Y") }}
+  </div>
+
+  <form method="POST" action="{{ url_for('events.edit_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+        id="edit-rsvp-form">
+    <datalist id="allergy_tag_options">
+      {% for t in all_tags %}<option value="{{ t.label }}">{% endfor %}
+    </datalist>
+
+    <!-- Status -->
+    <div class="form-group" style="margin-bottom:1rem; max-width:200px;">
+      <label>Status</label>
+      <select name="status">
+        <option value="confirmed" {% if rsvp.status=='confirmed' %}selected{% endif %}>Confirmed</option>
+        <option value="waitlist"  {% if rsvp.status=='waitlist'  %}selected{% endif %}>Waitlist</option>
+        <option value="declined"  {% if rsvp.status=='declined'  %}selected{% endif %}>Declined</option>
+      </select>
+    </div>
+
+    <hr class="divider">
+
+    <div class="card-title" style="margin-bottom:.8rem;">
+      Guests
+      <span class="text-muted" style="font-weight:normal; font-size:.8rem; text-transform:none; letter-spacing:0;">
+        (additional guests beyond the member themselves)
+      </span>
+    </div>
+
+    <div id="guest-list">
+      {% for g in rsvp.guests %}
+      <div class="guest-row" style="background:var(--parchment); border-radius:5px;
+           padding:.8rem; margin-bottom:.6rem; position:relative;">
+        <div class="form-grid" style="grid-template-columns:80px 1fr 1fr 60px;">
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" name="guest_{{ loop.index }}_title"
+                   value="{{ g.title or '' }}" placeholder="Dr.…">
+          </div>
+          <div class="form-group">
+            <label>First name *</label>
+            <input type="text" name="guest_{{ loop.index }}_first"
+                   value="{{ g.first_name }}" required>
+          </div>
+          <div class="form-group">
+            <label>Last name *</label>
+            <input type="text" name="guest_{{ loop.index }}_last"
+                   value="{{ g.last_name }}" required>
+          </div>
+          <div class="form-group">
+            <label>Suffix</label>
+            <input type="text" name="guest_{{ loop.index }}_suffix"
+                   value="{{ g.suffix or '' }}" placeholder="Jr.…">
+          </div>
+          <div class="form-group full">
+            <label>Allergy / dietary tags</label>
+            <input type="text" name="guest_{{ loop.index }}_allergy_tags" list="allergy_tag_options"
+                   value="{{ g.dietary_tags|map(attribute='label')|join(', ') }}"
+                   placeholder="e.g. Gluten intolerant, Nut allergy">
+          </div>
+          <div class="form-group full" style="margin-top:.3rem;">
+            <label>Gender *</label>
+            <div style="display:flex; gap:1.5rem; margin-top:.2rem;">
+              <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--ink);">
+                <input type="radio" name="guest_{{ loop.index }}_gender" value="M"
+                       {% if g.gender == 'M' %}checked{% endif %} required> Male
+              </label>
+              <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--ink);">
+                <input type="radio" name="guest_{{ loop.index }}_gender" value="F"
+                       {% if g.gender == 'F' %}checked{% endif %}> Female
+              </label>
+              <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--ink);">
+                <input type="radio" name="guest_{{ loop.index }}_gender" value="Other"
+                       {% if g.gender == 'Other' %}checked{% endif %}> Other
+              </label>
+            </div>
+          </div>
+        </div>
+        <button type="button" onclick="removeGuest(this)"
+                style="position:absolute; top:.5rem; right:.6rem; background:none; border:none;
+                       color:var(--ink-muted); cursor:pointer; font-size:1rem;">✕</button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <button type="button" onclick="addGuest()" class="btn btn-outline btn-sm"
+            style="margin-bottom:1.5rem;">+ Add guest</button>
+
+    <hr class="divider">
+    <div class="flex gap-1">
+      <button type="submit" class="btn btn-primary">Save changes</button>
+      <a href="{{ url_for('events.rsvp_list', event_id=event.id) }}" class="btn btn-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let guestCount = {{ rsvp.guests|length }};
+
+  function addGuest() {
+    guestCount++;
+    const idx = guestCount;
+    const row = document.createElement('div');
+    row.className = 'guest-row';
+    row.style.cssText = 'background:var(--parchment);border-radius:5px;padding:.8rem;margin-bottom:.6rem;position:relative;';
+    row.innerHTML = `
+      <div class="form-grid" style="grid-template-columns:80px 1fr 1fr 60px;">
+        <div class="form-group">
+          <label>Title</label>
+          <input type="text" name="guest_${idx}_title" placeholder="Dr.…">
+        </div>
+        <div class="form-group">
+          <label>First name *</label>
+          <input type="text" name="guest_${idx}_first" required>
+        </div>
+        <div class="form-group">
+          <label>Last name *</label>
+          <input type="text" name="guest_${idx}_last" required>
+        </div>
+        <div class="form-group">
+          <label>Suffix</label>
+          <input type="text" name="guest_${idx}_suffix" placeholder="Jr.…">
+        </div>
+        <div class="form-group full">
+          <label>Allergy / dietary tags</label>
+          <input type="text" name="guest_${idx}_allergy_tags" list="allergy_tag_options"
+                 placeholder="e.g. Gluten intolerant, Nut allergy">
+        </div>
+        <div class="form-group full" style="margin-top:.3rem;">
+          <label>Gender *</label>
+          <div style="display:flex; gap:1.5rem; margin-top:.2rem;">
+            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
+              <input type="radio" name="guest_${idx}_gender" value="M" required> Male
+            </label>
+            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
+              <input type="radio" name="guest_${idx}_gender" value="F"> Female
+            </label>
+            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
+              <input type="radio" name="guest_${idx}_gender" value="Other"> Other
+            </label>
+          </div>
+        </div>
+      </div>
+      <button type="button" onclick="removeGuest(this)"
+              style="position:absolute;top:.5rem;right:.6rem;background:none;border:none;
+                     color:var(--ink-muted);cursor:pointer;font-size:1rem;">✕</button>
+    `;
+    document.getElementById('guest-list').appendChild(row);
+    row.querySelector('input[name$="_first"]').focus();
+  }
+
+  function removeGuest(btn) {
+    btn.closest('.guest-row').remove();
+    document.querySelectorAll('.guest-row').forEach((row, i) => {
+      const n = i + 1;
+      row.querySelectorAll('input').forEach(inp => {
+        inp.name = inp.name.replace(/guest_\d+_/, `guest_${n}_`);
+      });
+    });
+    guestCount = document.querySelectorAll('.guest-row').length;
+  }
+</script>
+{% endblock %}

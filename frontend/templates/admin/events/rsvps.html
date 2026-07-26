@@ -1,0 +1,375 @@
+{% extends "base.html" %}
+{% block title %}RSVPs — {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>RSVPs — {{ event.title }}</h1>
+  <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">← Back to event</a>
+</div>
+
+<!-- Summary bar -->
+<div style="display:grid; grid-template-columns:repeat(4,1fr); gap:1rem; margin-bottom:1.5rem;">
+  {% for label, count, color in [
+      ('Confirmed RSVPs', confirmed|length, 'var(--success)'),
+      ('Total seats', event.confirmed_count, 'var(--burgundy)'),
+      ('Paid', confirmed | selectattr('payment_status','eq','paid') | list | length, 'var(--success)'),
+      ('Unpaid', confirmed | selectattr('payment_status','eq','unpaid') | list | length, 'var(--danger)'),
+      ('Pending confirmation', promoted|length, 'var(--gold)'),
+      ('Waitlist', waitlist|length, 'var(--gold)'),
+      ('Declined', declined|length, 'var(--ink-muted)') ] %}
+  <div class="card" style="text-align:center; padding:1rem; border-top-color:{{ color }};">
+    <div style="font-size:1.8rem; color:{{ color }}; font-family:Georgia,serif;">{{ count }}</div>
+    <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                color:var(--ink-muted); font-family:sans-serif; margin-top:.2rem;">{{ label }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% if event.price_per_person %}
+<div class="card" style="border-top-color:var(--gold); padding:1rem 1.5rem; margin-bottom:1.5rem;">
+  <div style="display:flex; gap:2rem; align-items:center; flex-wrap:wrap;">
+    <div>
+      <span style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                   color:var(--ink-muted); font-family:sans-serif;">Price per person</span>
+      <div style="font-size:1.1rem; color:var(--burgundy); margin-top:.1rem;">
+        ${{ "%.2f"|format(event.price_per_person|float) }}
+      </div>
+    </div>
+    <div>
+      <span style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                   color:var(--ink-muted); font-family:sans-serif;">Total expected revenue</span>
+      <div style="font-size:1.1rem; color:var(--burgundy); margin-top:.1rem;">
+        ${{ "%.2f"|format(event.confirmed_count * event.price_per_person|float) }}
+        <span class="text-muted text-sm">({{ event.confirmed_count }} seats)</span>
+        <span class="text-muted text-sm" style="margin-left:.5rem;">·
+          ${{ "%.2f"|format(total_collected) }} collected
+        </span>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Manual add — members only, partner opt-in -->
+<div class="card">
+  <div class="card-title">Add RSVP manually
+    {% if event.capacity %}
+      <span style="font-size:.75rem; font-weight:normal; margin-left:.5rem;
+                   color:{% if event.confirmed_count > event.capacity %}var(--danger)
+                         {% elif event.confirmed_count == event.capacity %}var(--gold)
+                         {% else %}var(--success){% endif %};">
+        {{ event.confirmed_count }} / {{ event.capacity }} seats
+        {% if event.confirmed_count > event.capacity %} -- OVER CAPACITY{% endif %}
+      </span>
+    {% endif %}
+  </div>
+  <form method="POST" action="{{ url_for('events.admin_add_rsvp', event_id=event.id) }}"
+        style="display:flex; gap:.6rem; flex-wrap:wrap; align-items:flex-end;">
+    <div class="form-group" style="min-width:240px;">
+      <label>Member</label>
+      <select name="person_id" required id="member-select" onchange="updatePartnerLabel(this)">
+        <option value="">— Select member —</option>
+        {% for p in all_persons %}
+          <option value="{{ p.id }}"
+                  data-partner="{{ p.partner.display_name if p.partner else '' }}"
+                  data-partner-id="{{ p.partner.id if p.partner else '' }}">
+            {{ p.display_name }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group" id="partner-checkbox-group" style="display:none;">
+      <label>&nbsp;</label>
+      <div class="checkbox-row" style="padding:.45rem 0;">
+        <input type="checkbox" name="include_partner" id="include-partner" value="1" checked>
+        <label for="include-partner" id="partner-label">Also add partner</label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-outline">Add</button>
+  </form>
+  <p class="text-muted text-sm" style="margin-top:.6rem; margin-bottom:0;">
+    Automatically confirmed if a seat is open, or added to the waitlist if the event is full.
+  </p>
+</div>
+
+<!-- Sort control -->
+<div class="card" style="padding:.8rem 1.2rem;">
+  <form method="GET" style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+    <label style="font-size:.8rem; color:var(--ink-muted); font-family:sans-serif;">Sort by</label>
+    <select name="sort" onchange="this.form.submit()" style="max-width:180px;">
+      <option value="last_name"  {% if sort=='last_name'  %}selected{% endif %}>Last name</option>
+      <option value="first_name" {% if sort=='first_name' %}selected{% endif %}>First name</option>
+      <option value="officer"    {% if sort=='officer'    %}selected{% endif %}>Officer</option>
+      <option value="dietary"    {% if sort=='dietary'    %}selected{% endif %}>Dietary</option>
+    </select>
+    <noscript><button type="submit" class="btn btn-outline btn-sm">Sort</button></noscript>
+  </form>
+</div>
+
+<!-- Confirmed -->
+{% if confirmed %}
+<div class="card">
+  <div class="card-title">Confirmed ({{ confirmed|length }} RSVPs · {{ event.confirmed_count }} seats)</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Name</th><th>Guests</th><th>Dietary (admin only)</th><th>Payment</th><th>RSVP date</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for rsvp in confirmed %}
+      <tr>
+        <td style="font-weight:500; color:var(--burgundy-dk);">{{ rsvp.person.display_name }}</td>
+        <td>
+          {% if rsvp.guests %}
+            {% for g in rsvp.guests %}
+              <div class="text-sm">{{ g.display_name }}</div>
+            {% endfor %}
+          {% else %}
+            <span class="text-muted text-sm">No guests</span>
+          {% endif %}
+        </td>
+        <td class="text-sm text-muted">
+          {% set all_dietary = [] %}
+          {% if rsvp.person.dietary_tags %}{% set _ = all_dietary.append(rsvp.person.display_name ~ ': ' ~ rsvp.person.dietary_tags|map(attribute='label')|join(', ')) %}{% endif %}
+          {% for g in rsvp.guests %}{% if g.dietary_tags %}{% set _ = all_dietary.append(g.display_name ~ ': ' ~ g.dietary_tags|map(attribute='label')|join(', ')) %}{% endif %}{% endfor %}
+          {% if all_dietary %}
+            {% for item in all_dietary %}<div>{{ item }}</div>{% endfor %}
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          {% set ps = rsvp.payment_status or 'unpaid' %}
+          <details style="cursor:pointer;">
+            <summary style="list-style:none; cursor:pointer;">
+              {% if ps == 'paid' %}
+                <span class="badge badge-success">Paid</span>
+              {% elif ps == 'waived' %}
+                <span class="badge badge-muted">Waived</span>
+              {% elif ps == 'partial' %}
+                <span class="badge" style="background:#F59E0B;color:#fff;">Partial</span>
+              {% else %}
+                <span class="badge" style="background:#F5D5D9;color:var(--danger);">Unpaid</span>
+              {% endif %}
+              {% if rsvp.amount_paid %}
+                <span class="text-sm text-muted">${{ "%.2f"|format(rsvp.amount_paid) }}</span>
+              {% endif %}
+            </summary>
+            <form method="POST"
+                  action="{{ url_for('events.update_payment', event_id=event.id, rsvp_id=rsvp.id) }}"
+                  style="margin-top:.5rem; padding:.6rem; background:var(--parchment);
+                         border-radius:var(--radius); min-width:200px;">
+              <div class="form-group" style="margin-bottom:.4rem;">
+                <label style="font-size:.72rem;">Status</label>
+                <select name="payment_status" style="font-size:.8rem; padding:.2rem .4rem;">
+                  <option value="unpaid"  {% if ps=='unpaid'  %}selected{% endif %}>Unpaid</option>
+                  <option value="paid"    {% if ps=='paid'    %}selected{% endif %}>Paid</option>
+                  <option value="partial" {% if ps=='partial' %}selected{% endif %}>Partial</option>
+                  <option value="waived"  {% if ps=='waived'  %}selected{% endif %}>Waived</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:.4rem;">
+                <label style="font-size:.72rem;">Amount paid ($)</label>
+                <input type="number" name="amount_paid" step="0.01" min="0"
+                       value="{{ rsvp.amount_paid or '' }}"
+                       style="font-size:.8rem; padding:.2rem .4rem; width:100px;">
+              </div>
+              <div class="form-group" style="margin-bottom:.6rem;">
+                <label style="font-size:.72rem;">Note</label>
+                <input type="text" name="payment_note"
+                       value="{{ rsvp.payment_note or '' }}"
+                       placeholder="e.g. Cash, check #1234…"
+                       style="font-size:.8rem; padding:.2rem .4rem;">
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </form>
+          </details>
+        </td>
+        <td class="text-sm text-muted">{{ rsvp.created_at.strftime("%b %d") }}</td>
+        <td>
+          <div class="actions">
+            <a href="{{ url_for('events.edit_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+               class="btn btn-outline btn-sm">Edit</a>
+            <form method="POST"
+                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                  onsubmit="return confirm('Remove {{ rsvp.person.display_name }}\'s RSVP?')">
+              <button class="btn btn-outline btn-sm">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Waitlist -->
+{% if promoted %}
+<div class="card" style="border-top-color:var(--gold);">
+  <div class="card-title">Pending confirmation ({{ promoted|length }})</div>
+  <p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:.8rem;">
+    Promoted from the waitlist -- seat is held while they confirm.
+  </p>
+  <table class="data-table">
+    <thead>
+      <tr><th>Name</th><th>Guests</th><th>Offer expires</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for rsvp in promoted %}
+      <tr>
+        <td style="font-weight:500;">{{ rsvp.person.display_name }}</td>
+        <td class="text-sm text-muted">
+          {% if rsvp.guests %}{{ rsvp.guests|length }} guest{{ 's' if rsvp.guests|length!=1 }}{% else %}—{% endif %}
+        </td>
+        <td class="text-sm text-muted">
+          {% if rsvp.promotion_expires_at %}{{ rsvp.promotion_expires_at.strftime("%b %d at %I:%M %p") }}{% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            <form method="POST"
+                  action="{{ url_for('events.promote_waitlist', event_id=event.id, rsvp_id=rsvp.id) }}">
+              <button class="btn btn-gold btn-sm">Force confirm</button>
+            </form>
+            <form method="POST"
+                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                  onsubmit="return confirm('Cancel this offer? The seat will not be automatically re-offered.')">
+              <button class="btn btn-outline btn-sm">Cancel offer</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if waitlist %}
+<div class="card">
+  <div class="card-title">Waitlist ({{ waitlist|length }})</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>#</th><th>Name</th><th>Guests</th><th>Added</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for rsvp in waitlist %}
+      <tr>
+        <td class="text-muted">{{ loop.index }}</td>
+        <td style="font-weight:500;">{{ rsvp.person.display_name }}</td>
+        <td class="text-sm text-muted">
+          {% if rsvp.guests %}{{ rsvp.guests|length }} guest{{ 's' if rsvp.guests|length!=1 }}{% else %}—{% endif %}
+        </td>
+        <td>
+          {% set ps = rsvp.payment_status or 'unpaid' %}
+          <details style="cursor:pointer;">
+            <summary style="list-style:none; cursor:pointer;">
+              {% if ps == 'paid' %}
+                <span class="badge badge-success">Paid</span>
+              {% elif ps == 'waived' %}
+                <span class="badge badge-muted">Waived</span>
+              {% elif ps == 'partial' %}
+                <span class="badge" style="background:#F59E0B;color:#fff;">Partial</span>
+              {% else %}
+                <span class="badge" style="background:#F5D5D9;color:var(--danger);">Unpaid</span>
+              {% endif %}
+              {% if rsvp.amount_paid %}
+                <span class="text-sm text-muted">${{ "%.2f"|format(rsvp.amount_paid) }}</span>
+              {% endif %}
+            </summary>
+            <form method="POST"
+                  action="{{ url_for('events.update_payment', event_id=event.id, rsvp_id=rsvp.id) }}"
+                  style="margin-top:.5rem; padding:.6rem; background:var(--parchment);
+                         border-radius:var(--radius); min-width:200px;">
+              <div class="form-group" style="margin-bottom:.4rem;">
+                <label style="font-size:.72rem;">Status</label>
+                <select name="payment_status" style="font-size:.8rem; padding:.2rem .4rem;">
+                  <option value="unpaid"  {% if ps=='unpaid'  %}selected{% endif %}>Unpaid</option>
+                  <option value="paid"    {% if ps=='paid'    %}selected{% endif %}>Paid</option>
+                  <option value="partial" {% if ps=='partial' %}selected{% endif %}>Partial</option>
+                  <option value="waived"  {% if ps=='waived'  %}selected{% endif %}>Waived</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-bottom:.4rem;">
+                <label style="font-size:.72rem;">Amount paid ($)</label>
+                <input type="number" name="amount_paid" step="0.01" min="0"
+                       value="{{ rsvp.amount_paid or '' }}"
+                       style="font-size:.8rem; padding:.2rem .4rem; width:100px;">
+              </div>
+              <div class="form-group" style="margin-bottom:.6rem;">
+                <label style="font-size:.72rem;">Note</label>
+                <input type="text" name="payment_note"
+                       value="{{ rsvp.payment_note or '' }}"
+                       placeholder="e.g. Cash, check #1234…"
+                       style="font-size:.8rem; padding:.2rem .4rem;">
+              </div>
+              <button type="submit" class="btn btn-primary btn-sm">Save</button>
+            </form>
+          </details>
+        </td>
+        <td class="text-sm text-muted">{{ rsvp.created_at.strftime("%b %d") }}</td>
+        <td>
+          <div class="actions">
+            <form method="POST"
+                  action="{{ url_for('events.promote_waitlist', event_id=event.id, rsvp_id=rsvp.id) }}">
+              <button class="btn btn-gold btn-sm">Promote</button>
+            </form>
+            <form method="POST"
+                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                  onsubmit="return confirm('Remove from waitlist?')">
+              <button class="btn btn-outline btn-sm">Remove</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Declined -->
+{% if declined %}
+<div class="card">
+  <div class="card-title" style="color:var(--ink-muted);">Declined ({{ declined|length }})</div>
+  <table class="data-table">
+    <thead><tr><th>Name</th><th>Date</th><th></th></tr></thead>
+    <tbody>
+      {% for rsvp in declined %}
+      <tr>
+        <td>{{ rsvp.person.display_name }}</td>
+        <td class="text-sm text-muted">{{ rsvp.updated_at.strftime("%b %d") }}</td>
+        <td>
+          <form method="POST"
+                action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}">
+            <button class="btn btn-outline btn-sm">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if not confirmed and not promoted and not waitlist and not declined %}
+<div class="card" style="text-align:center; padding:2.5rem; color:var(--ink-muted); font-style:italic;">
+  No RSVPs yet for this event.
+</div>
+{% endif %}
+
+{% endblock %}
+
+
+{% block scripts %}
+<script>
+function updatePartnerLabel(select) {
+  const opt = select.options[select.selectedIndex];
+  const partnerName = opt.dataset.partner;
+  const group = document.getElementById('partner-checkbox-group');
+  const label = document.getElementById('partner-label');
+  if (partnerName) {
+    label.textContent = 'Also add ' + partnerName;
+    group.style.display = 'block';
+  } else {
+    group.style.display = 'none';
+  }
+}
+</script>
+{% endblock %}

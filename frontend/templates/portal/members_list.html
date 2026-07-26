@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Members — Chevalier Events{% endblock %}
+
+{% macro addr_block(label, line1, line2, city, state, zip, country) %}
+  {%- if line1 or city -%}
+    {% if label %}<div style="font-weight:600;">{{ label }}</div>{% endif %}
+    {% if line1 %}<div>{{ line1 }}</div>{% endif %}
+    {% if line2 %}<div>{{ line2 }}</div>{% endif %}
+    <div>{{ [city, state, zip] | select | join(', ') }}</div>
+    {% if country and country not in ('USA','US','United States') %}<div>{{ country }}</div>{% endif %}
+  {%- endif -%}
+{% endmacro %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Member Directory</h1>
+</div>
+
+{% for group_key, group_label in group_labels %}
+  {% set people = grouped.get(group_key, []) %}
+  {% if people %}
+  <div style="margin-bottom:1.8rem;">
+    <div style="font-family:sans-serif; font-size:.72rem; font-weight:700;
+                letter-spacing:.1em; text-transform:uppercase; color:var(--burgundy);
+                border-bottom:2px solid var(--burgundy); padding-bottom:.3rem;
+                margin-bottom:.6rem;">
+      {{ group_label }}
+      <span style="font-weight:normal; color:var(--ink-muted);">({{ people|length }})</span>
+    </div>
+
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Name &amp; Spouse</th>
+          <th>Email</th>
+          <th>Address 1</th>
+          <th>Address 2</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in people %}
+        <tr>
+          <td>
+            <div style="font-weight:600;">
+              {{ p.display_name }}{% if p.is_officer and p.officer_role %}
+                <span class="text-muted text-sm"> ({{ p.officer_role }})</span>
+              {% endif %}
+            </div>
+            {% if p.partner %}
+              <div class="text-muted">&amp; {{ p.partner.display_name }}</div>
+              {% if p.partner.home_phone_1 or p.partner.phone %}
+                <div class="text-muted text-sm">
+                  {% if p.partner.home_phone_1 %}{{ p.partner.first_name }} Home: {{ p.partner.home_phone_1 }}<br>{% endif %}
+                  {% if p.partner.phone %}{{ p.partner.first_name }} Cell: {{ p.partner.phone }}{% endif %}
+                </div>
+              {% endif %}
+            {% endif %}
+            <div class="text-muted text-sm" style="margin-top:.3rem;">
+              {% if p.home_phone_1 %}{{ p.first_name }} Home: {{ p.home_phone_1 }}<br>{% endif %}
+              {% if p.phone %}{{ p.first_name }} Cell: {{ p.phone }}{% endif %}
+            </div>
+          </td>
+          <td>
+            <div>{{ p.email or '—' }}</div>
+            {% if p.partner and p.partner.email %}
+              <div class="text-muted text-sm">{{ p.partner.email }}</div>
+            {% endif %}
+          </td>
+          <td class="text-sm">
+            {{ addr_block(None, p.address_line1, p.address_line2, p.city, p.province_state, p.postal_code, p.country) }}
+          </td>
+          <td class="text-sm">
+            {{ addr_block(p.address2_label, p.address2_line1, p.address2_line2, p.city2, p.province_state2, p.postal_code2, p.country2) }}
+            {% if p.home_phone_2 %}<div class="text-muted">Home: {{ p.home_phone_2 }}</div>{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+{% endfor %}
+
+{% if not (grouped.get('officer') or grouped.get('member') or grouped.get('honoraire') or grouped.get('aspirant')) %}
+  <p class="text-muted">No members found.</p>
+{% endif %}
+
+{% endblock %}

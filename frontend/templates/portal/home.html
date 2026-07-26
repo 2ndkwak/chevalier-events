@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Events — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Upcoming Events</h1>
+</div>
+
+{% if events %}
+  {% for event in events %}
+  {% set my_rsvp = my_rsvps.get(event.id) %}
+  <div class="card">
+    <!-- Event header row -->
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:.8rem;">
+      <div>
+        <h2 style="font-size:1.2rem; font-weight:normal; color:var(--burgundy-dk); letter-spacing:.03em;">
+          {{ event.title }}
+        </h2>
+        <div style="margin-top:.3rem; font-family:sans-serif; font-size:.82rem; color:var(--ink-muted);">
+          {{ event.event_date.strftime("%A, %B %d, %Y") }}
+          {% if event.event_date.strftime("%I:%M") != "12:00" %}
+            at {{ event.event_date.strftime("%I:%M %p") }}
+          {% endif %}
+          {% if event.venue_name %}
+            &nbsp;·&nbsp; {{ event.venue_name }}
+          {% endif %}
+        </div>
+      </div>
+      {% if my_rsvp %}
+        <span class="badge {% if my_rsvp.status=='confirmed' %}badge-success
+                           {% elif my_rsvp.status=='waitlist' %}badge-gold
+                           {% else %}badge-muted{% endif %}"
+              style="white-space:nowrap; margin-top:.2rem;">
+          {% if my_rsvp.status == 'confirmed' %}✓ Attending
+          {% elif my_rsvp.status == 'waitlist' %}On waitlist
+          {% else %}Not attending{% endif %}
+        </span>
+      {% elif event.is_full %}
+        <span class="badge badge-muted" style="white-space:nowrap; margin-top:.2rem;">Waitlist available</span>
+      {% else %}
+        <span class="badge badge-burg" style="white-space:nowrap; margin-top:.2rem;">RSVP open</span>
+      {% endif %}
+    </div>
+
+    <hr class="gold-rule" style="margin:.8rem 0;">
+
+    {% if event.teaser %}
+      <p style="font-size:.92rem; margin-bottom:.8rem; color:var(--ink-mid);">{{ event.teaser }}</p>
+    {% elif event.description %}
+      <div style="font-size:.92rem; margin-bottom:.8rem; color:var(--ink-mid);">{{ event.description|safe }}</div>
+    {% endif %}
+
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:.6rem;">
+      {% if event.rsvp_deadline %}
+        <span style="font-family:sans-serif; font-size:.78rem; color:var(--ink-muted);">
+          RSVP by {{ event.rsvp_deadline.strftime("%B %d, %Y") }}
+        </span>
+      {% else %}
+        <span></span>
+      {% endif %}
+      <a href="{{ url_for('portal.event_detail', event_id=event.id) }}" class="btn btn-primary btn-sm">View event & RSVP</a>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="card" style="text-align:center; padding:3rem; border-top-color:var(--gold);">
+    <img src="{{ url_for('static', filename='img/Chevalier_Logo.jpg') }}"
+         alt="" style="height:80px; opacity:.35; margin-bottom:1rem;">
+    <p style="color:var(--ink-muted); font-style:italic;">No upcoming events at this time.</p>
+  </div>
+{% endif %}
+{% endblock %}

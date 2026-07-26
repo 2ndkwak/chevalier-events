@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Events — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Events</h1>
+  <a href="{{ url_for('events.create_event') }}" class="btn btn-gold">+ Create event</a>
+</div>
+
+<div class="card">
+  <div style="display:flex; gap:.6rem; margin-bottom:1rem;">
+    {% for label, val in [('Upcoming','upcoming'),('Archived','past'),('All','all')] %}
+    <a href="{{ url_for('events.list_events', show=val) }}"
+       class="btn btn-sm {% if show==val %}btn-primary{% else %}btn-outline{% endif %}">
+      {{ label }}
+    </a>
+    {% endfor %}
+  </div>
+
+  {% if events %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Event</th><th>Date</th><th>Venue</th>
+        <th>RSVPs</th><th>Status</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for event in events %}
+      <tr>
+        <td>
+          <a href="{{ url_for('events.edit_event', event_id=event.id) }}"
+             style="color:var(--burgundy-dk); font-weight:500;">{{ event.title }}</a>
+        </td>
+        <td>{{ event.event_date.strftime("%b %d, %Y") }}</td>
+        <td>{{ event.venue_name or '—' }}</td>
+        <td>
+          {{ event.confirmed_count }}{% if event.capacity %} / {{ event.capacity }}{% endif %}
+          {% set wl = event.rsvps|selectattr('status','eq','waitlist')|list|length %}
+          {% if wl %}<span class="text-muted text-sm"> (+{{ wl }} waitlist)</span>{% endif %}
+        </td>
+        <td>
+          {% if event.is_published %}
+            <span class="badge badge-success">Published</span>
+          {% else %}
+            <span class="badge badge-muted">Draft</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="actions">
+            <a href="{{ url_for('events.edit_event', event_id=event.id) }}"
+               class="btn btn-outline btn-sm">Edit</a>
+            <a href="{{ url_for('events.rsvp_list', event_id=event.id) }}"
+               class="btn btn-outline btn-sm">RSVPs</a>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted text-sm">
+    No {{ show }} events.
+    <a href="{{ url_for('events.create_event') }}" style="color:var(--gold);">Create one</a>.
+  </p>
+  {% endif %}
+</div>
+{% endblock %}

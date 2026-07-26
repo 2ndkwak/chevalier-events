@@ -1,0 +1,276 @@
+{% extends "base.html" %}
+{% block title %}My Profile — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>My Profile</h1>
+</div>
+
+<div style="max-width:640px;">
+
+  <!-- Read-only identity block -->
+  <div class="card" style="margin-bottom:1.2rem;">
+    <div class="card-title">My information</div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:.6rem 1.5rem;
+                font-family:sans-serif; font-size:.88rem;">
+      <div>
+        <span style="color:var(--ink-muted); font-size:.75rem; text-transform:uppercase;
+                     letter-spacing:.06em;">Name</span>
+        <div style="color:var(--ink); margin-top:.1rem;">{{ person.display_name }}</div>
+      </div>
+      <div>
+        <span style="color:var(--ink-muted); font-size:.75rem; text-transform:uppercase;
+                     letter-spacing:.06em;">Email</span>
+        <div style="color:var(--ink); margin-top:.1rem;">{{ person.email or '—' }}</div>
+      </div>
+      {% if person.member_since %}
+      <div>
+        <span style="color:var(--ink-muted); font-size:.75rem; text-transform:uppercase;
+                     letter-spacing:.06em;">Member since</span>
+        <div style="color:var(--ink); margin-top:.1rem;">{{ person.member_since.strftime("%Y") }}</div>
+      </div>
+      {% endif %}
+      {% if person.partner %}
+      <div>
+        <span style="color:var(--ink-muted); font-size:.75rem; text-transform:uppercase;
+                     letter-spacing:.06em;">Partner</span>
+        <div style="color:var(--ink); margin-top:.1rem;">{{ person.partner.display_name }}</div>
+      </div>
+      {% endif %}
+    </div>
+    <p class="text-muted text-sm" style="margin-top:.8rem; font-style:italic;">
+      To update your name or email, please contact the Grand Senechal.
+    </p>
+  </div>
+
+  <!-- Editable fields -->
+  <div class="card">
+    <div class="card-title">Update my details</div>
+    <form method="POST">
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
+        <div class="form-group">
+          <label for="phone">Cell phone</label>
+          <input type="tel" id="phone" name="phone"
+                 value="{{ person.phone or '' }}"
+                 placeholder="e.g. 216-555-0100">
+        </div>
+        <div class="form-group">
+          <label for="allergy_tags">Allergy / dietary tags</label>
+          <input type="text" id="allergy_tags" name="allergy_tags" list="allergy_tag_options"
+                 value="{{ person.dietary_tags|map(attribute='label')|join(', ') }}"
+                 placeholder="e.g. Gluten intolerant, Nut allergy">
+          <datalist id="allergy_tag_options">
+            {% for t in all_tags %}<option value="{{ t.label }}">{% endfor %}
+          </datalist>
+        </div>
+      </div>
+
+      <hr class="divider">
+      <div class="card-title" style="font-size:.8rem; margin-bottom:.8rem;">Primary address</div>
+
+      <div class="form-group">
+        <label for="home_phone_1">Home phone</label>
+        <input type="tel" id="home_phone_1" name="home_phone_1"
+               value="{{ person.home_phone_1 or '' }}"
+               placeholder="e.g. 216-555-0100">
+      </div>
+
+      <div class="form-group">
+        <label for="address_line1">Address</label>
+        <input type="text" id="address_line1" name="address_line1"
+               value="{{ person.address_line1 or '' }}"
+               placeholder="Street address">
+      </div>
+      <div class="form-group">
+        <label for="address_line2">Apt / Suite</label>
+        <input type="text" id="address_line2" name="address_line2"
+               value="{{ person.address_line2 or '' }}"
+               placeholder="Apartment, suite, unit...">
+      </div>
+
+      <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:0 1rem;">
+        <div class="form-group">
+          <label for="city">City</label>
+          <input type="text" id="city" name="city"
+                 value="{{ person.city or '' }}">
+        </div>
+        <div class="form-group">
+          <label for="province_state">State</label>
+          <input type="text" id="province_state" name="province_state"
+                 value="{{ person.province_state or '' }}"
+                 placeholder="OH">
+        </div>
+        <div class="form-group">
+          <label for="postal_code">ZIP</label>
+          <input type="text" id="postal_code" name="postal_code"
+                 value="{{ person.postal_code or '' }}">
+        </div>
+      </div>
+
+      <div class="form-group" style="max-width:200px;">
+        <label for="country">Country</label>
+        <input type="text" id="country" name="country"
+               value="{{ person.country or 'USA' }}">
+      </div>
+
+      <hr class="divider">
+      <div class="card-title" style="font-size:.8rem; margin-bottom:.8rem;">
+        Second address <span class="text-muted" style="font-weight:normal;">(optional — e.g. a winter or summer home)</span>
+      </div>
+
+      <div class="form-group">
+        <label for="address2_label">Label</label>
+        <input type="text" id="address2_label" name="address2_label"
+               value="{{ person.address2_label or '' }}"
+               placeholder="e.g. Winter home">
+      </div>
+
+      <div class="form-group">
+        <label for="home_phone_2">Home phone</label>
+        <input type="tel" id="home_phone_2" name="home_phone_2"
+               value="{{ person.home_phone_2 or '' }}"
+               placeholder="e.g. 239-555-0100">
+      </div>
+
+      <div class="form-group">
+        <label for="address2_line1">Address</label>
+        <input type="text" id="address2_line1" name="address2_line1"
+               value="{{ person.address2_line1 or '' }}"
+               placeholder="Street address">
+      </div>
+      <div class="form-group">
+        <label for="address2_line2">Apt / Suite</label>
+        <input type="text" id="address2_line2" name="address2_line2"
+               value="{{ person.address2_line2 or '' }}"
+               placeholder="Apartment, suite, unit...">
+      </div>
+
+      <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:0 1rem;">
+        <div class="form-group">
+          <label for="city2">City</label>
+          <input type="text" id="city2" name="city2"
+                 value="{{ person.city2 or '' }}">
+        </div>
+        <div class="form-group">
+          <label for="province_state2">State</label>
+          <input type="text" id="province_state2" name="province_state2"
+                 value="{{ person.province_state2 or '' }}"
+                 placeholder="FL">
+        </div>
+        <div class="form-group">
+          <label for="postal_code2">ZIP</label>
+          <input type="text" id="postal_code2" name="postal_code2"
+                 value="{{ person.postal_code2 or '' }}">
+        </div>
+      </div>
+
+      <div class="form-group" style="max-width:200px;">
+        <label for="country2">Country</label>
+        <input type="text" id="country2" name="country2"
+               value="{{ person.country2 or '' }}">
+      </div>
+
+      <div style="display:flex; gap:.8rem; margin-top:1rem;">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+        <a href="{{ url_for('portal.home') }}" class="btn btn-outline">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Password -->
+  <div class="card" style="margin-top:1.2rem;">
+    <div class="card-title">Password</div>
+    <p class="text-muted text-sm" style="margin-bottom:.8rem;">
+      Change your portal sign-in password.
+    </p>
+    <a href="{{ url_for('portal.change_password') }}" class="btn btn-outline btn-sm">
+      Change password
+    </a>
+  </div>
+
+  {% if person.partner and not person.partner.can_login %}
+  <div class="card" style="margin-top:1.2rem;">
+    <div class="card-title">{{ person.partner.first_name }}'s information</div>
+    <p class="text-muted text-sm" style="margin-bottom:.8rem;">
+      {{ person.partner.first_name }} doesn't have their own portal account, so you can keep
+      their contact and dietary information current here on their behalf.
+    </p>
+    <form method="POST" action="{{ url_for('portal.update_partner_profile') }}">
+
+      <div class="form-group">
+        <label for="partner_email">Email</label>
+        <input type="email" id="partner_email" name="email"
+               value="{{ person.partner.email or '' }}"
+               placeholder="e.g. name@example.com">
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:0 1rem;">
+        <div class="form-group">
+          <label for="partner_phone">Cell phone</label>
+          <input type="tel" id="partner_phone" name="phone"
+                 value="{{ person.partner.phone or '' }}"
+                 placeholder="e.g. 216-555-0100">
+        </div>
+        <div class="form-group">
+          <label for="partner_allergy_tags">Allergy / dietary tags</label>
+          <input type="text" id="partner_allergy_tags" name="allergy_tags" list="allergy_tag_options"
+                 value="{{ person.partner.dietary_tags|map(attribute='label')|join(', ') }}"
+                 placeholder="e.g. Gluten intolerant, Nut allergy">
+        </div>
+      </div>
+
+      <hr class="divider">
+      <div class="card-title" style="font-size:.8rem; margin-bottom:.8rem;">Address</div>
+
+      <div class="form-group">
+        <label for="partner_home_phone_1">Home phone</label>
+        <input type="tel" id="partner_home_phone_1" name="home_phone_1"
+               value="{{ person.partner.home_phone_1 or '' }}"
+               placeholder="e.g. 216-555-0100">
+      </div>
+      <div class="form-group">
+        <label for="partner_address_line1">Address</label>
+        <input type="text" id="partner_address_line1" name="address_line1"
+               value="{{ person.partner.address_line1 or '' }}"
+               placeholder="Street address">
+      </div>
+      <div class="form-group">
+        <label for="partner_address_line2">Apt / Suite</label>
+        <input type="text" id="partner_address_line2" name="address_line2"
+               value="{{ person.partner.address_line2 or '' }}"
+               placeholder="Apartment, suite, unit...">
+      </div>
+      <div style="display:grid; grid-template-columns:2fr 1fr 1fr; gap:0 1rem;">
+        <div class="form-group">
+          <label for="partner_city">City</label>
+          <input type="text" id="partner_city" name="city"
+                 value="{{ person.partner.city or '' }}">
+        </div>
+        <div class="form-group">
+          <label for="partner_province_state">State</label>
+          <input type="text" id="partner_province_state" name="province_state"
+                 value="{{ person.partner.province_state or '' }}"
+                 placeholder="OH">
+        </div>
+        <div class="form-group">
+          <label for="partner_postal_code">ZIP</label>
+          <input type="text" id="partner_postal_code" name="postal_code"
+                 value="{{ person.partner.postal_code or '' }}">
+        </div>
+      </div>
+      <div class="form-group" style="max-width:200px;">
+        <label for="partner_country">Country</label>
+        <input type="text" id="partner_country" name="country"
+               value="{{ person.partner.country or 'USA' }}">
+      </div>
+
+      <div style="display:flex; gap:.8rem; margin-top:1rem;">
+        <button type="submit" class="btn btn-primary">Save {{ person.partner.first_name }}'s info</button>
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

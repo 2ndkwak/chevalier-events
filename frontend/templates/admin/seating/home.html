@@ -1,0 +1,837 @@
+{% extends "base.html" %}
+{% block title %}Seating — {{ event.title }}{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Canvas layout ─────────────────────────────────────────────────────── */
+  .seating-layout {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+  }
+
+  /* ── Unassigned roster ─────────────────────────────────────────────────── */
+  .roster-panel {
+    position: sticky;
+    top: 1rem;
+  }
+  .roster-search {
+    width: 100%;
+    margin-bottom: .6rem;
+    font-size: .85rem;
+    padding: .35rem .6rem;
+  }
+  .roster-list {
+    max-height: 420px;
+    overflow-y: auto;
+    border: 1px solid var(--parchment-md);
+    border-radius: var(--radius);
+    background: var(--parchment);
+  }
+  .roster-person {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .4rem .7rem;
+    border-bottom: 1px solid var(--parchment-md);
+    cursor: grab;
+    font-size: .85rem;
+    user-select: none;
+    transition: background .1s;
+  }
+  .roster-person:last-child { border-bottom: none; }
+  .roster-person:hover { background: var(--gold-pale); }
+  .roster-person.dragging { opacity: .4; }
+  .roster-person .type-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .dot-male    { background: #5B8DB8; }
+  .dot-female  { background: #C4637A; }
+  .dot-neutral { background: var(--ink-muted); }
+  .roster-person .officer-star { color: var(--gold); font-size: .75rem; }
+
+  /* ── Tables canvas ─────────────────────────────────────────────────────── */
+  .tables-canvas { display: flex; flex-direction: column; gap: 1.2rem; }
+
+  .table-card {
+    background: var(--white);
+    border: 1px solid var(--parchment-md);
+    border-top: 3px solid var(--burgundy);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 1rem;
+  }
+  .table-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .8rem;
+  }
+  .table-label {
+    font-family: sans-serif;
+    font-size: .72rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--burgundy);
+    font-weight: 600;
+  }
+  .table-count {
+    font-size: .75rem;
+    color: var(--ink-muted);
+    font-family: sans-serif;
+  }
+
+  /* ── Seat grid ─────────────────────────────────────────────────────────── */
+  .seats-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+  .seat-slot {
+    width: 130px;
+    min-height: 52px;
+    border: 2px dashed var(--parchment-md);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: border-color .15s, background .15s;
+    background: var(--parchment);
+  }
+  .seat-slot.drag-over {
+    border-color: var(--gold);
+    background: var(--gold-pale);
+  }
+  .seat-slot.occupied {
+    border-style: solid;
+    border-color: var(--parchment-md);
+    background: var(--white);
+    cursor: default;
+  }
+  .seat-slot.locked {
+    border-color: var(--gold);
+    background: #fffbef;
+  }
+  .seat-num {
+    font-size: .62rem;
+    color: var(--ink-muted);
+    font-family: sans-serif;
+    position: absolute;
+    top: 3px; left: 5px;
+    line-height: 1;
+  }
+  .seat-occupant {
+    font-size: .78rem;
+    text-align: center;
+    padding: 0 .3rem;
+    line-height: 1.25;
+    color: var(--ink);
+    cursor: grab;
+    width: 100%;
+  }
+  .seat-occupant:active { cursor: grabbing; }
+  .seat-type-bar {
+    height: 3px;
+    width: 60%;
+    border-radius: 2px;
+    margin-top: 3px;
+  }
+  .seat-actions {
+    position: absolute;
+    top: 2px; right: 3px;
+    display: flex;
+    gap: 2px;
+  }
+  .seat-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: .65rem; padding: 1px 2px; line-height: 1;
+    color: var(--ink-muted);
+    opacity: 0;
+    transition: opacity .1s;
+  }
+  .seat-slot:hover .seat-btn { opacity: 1; }
+  .seat-btn:hover { color: var(--burgundy); }
+
+  /* ── Save bar ──────────────────────────────────────────────────────────── */
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--white);
+    border-top: 2px solid var(--gold);
+    padding: .7rem 1.2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    z-index: 100;
+    box-shadow: 0 -2px 12px rgba(30,18,8,.1);
+  }
+  .save-status {
+    font-size: .8rem;
+    font-family: sans-serif;
+    color: var(--ink-muted);
+  }
+  .save-status.dirty  { color: var(--gold); }
+  .save-status.saved  { color: var(--success); }
+  .save-status.error  { color: var(--danger); }
+
+  /* ── Legend ────────────────────────────────────────────────────────────── */
+  .legend {
+    display: flex; gap: 1rem; flex-wrap: wrap;
+    font-size: .72rem; font-family: sans-serif; color: var(--ink-muted);
+    align-items: center;
+  }
+  .legend-item { display: flex; align-items: center; gap: .3rem; }
+
+  @media (max-width: 900px) {
+    .seating-layout { grid-template-columns: 1fr; }
+    .roster-panel { position: static; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Seating — {{ event.title }}</h1>
+  <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">← Back to event</a>
+</div>
+
+<!-- Status bar -->
+<div class="card" style="border-top-color:var(--gold); padding:1rem 1.5rem; margin-bottom:1.5rem;">
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+    <div style="display:flex; gap:2rem; flex-wrap:wrap;">
+      <div>
+        <span style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                     color:var(--ink-muted); font-family:sans-serif;">Confirmed guests</span>
+        <div style="font-size:1.3rem; color:var(--burgundy); font-family:Georgia,serif;">
+          {{ attendees|length }}
+        </div>
+      </div>
+      <div>
+        <span style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                     color:var(--ink-muted); font-family:sans-serif;">Tables</span>
+        <div style="font-size:1.3rem; color:var(--burgundy); font-family:Georgia,serif;">
+          {% if event.table_config %}{{ event.table_config.tables|length }}
+          {% else %}<span style="color:var(--ink-muted); font-size:.9rem;">Not set</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        <span style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                     color:var(--ink-muted); font-family:sans-serif;">Seats assigned</span>
+        <div style="font-size:1.3rem; color:var(--burgundy); font-family:Georgia,serif;"
+             id="assigned-count">{{ assignments|length }}
+          {% if assignments|length == attendees|length and attendees|length > 0 %}
+            <span style="color:var(--success); font-size:.8rem;">✓ complete</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+      {% if not event.table_config %}
+        <a href="{{ url_for('table_planner.planner', event_id=event.id) }}"
+           class="btn btn-outline btn-sm">⊞ Set table layout first</a>
+      {% else %}
+        <form method="POST" action="{{ url_for('seating.propose_seating_fast', event_id=event.id) }}">
+          <button type="submit" class="btn btn-gold"
+                  onclick="return confirm('Generate a new AI seating proposal? Unlocked seats will be reassigned.')">
+            ✦ Generate AI Proposal
+          </button>
+        </form>
+        <a href="{{ url_for('events.allergies', event_id=event.id) }}"
+           class="btn btn-outline btn-sm">⚠ Allergies</a>
+        {% if assignments %}
+        <a href="{{ url_for('seating.print_seating', event_id=event.id) }}"
+           class="btn btn-outline btn-sm">🖨 Print / Export</a>
+        <form method="POST" action="{{ url_for('seating.clear_seating', event_id=event.id) }}">
+          <input type="hidden" name="keep_locked" value="1">
+          <button class="btn btn-outline btn-sm"
+                  onclick="return confirm('Clear all unlocked seat assignments?')">Clear unlocked</button>
+        </form>
+        <form method="POST" action="{{ url_for('seating.clear_seating', event_id=event.id) }}">
+          <input type="hidden" name="keep_locked" value="0">
+          <button class="btn btn-danger btn-sm"
+                  onclick="return confirm('Clear ALL seat assignments including locked?')">Clear all</button>
+        </form>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{% if event.table_config %}
+<div class="seating-layout">
+
+  <!-- ── LEFT PANEL: unassigned roster + rules ─────────────────────────── -->
+  <div class="roster-panel">
+
+    <!-- Unassigned people -->
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="card-title">Unassigned guests
+        <span id="unassigned-count" style="font-weight:normal; color:var(--ink-muted);"></span>
+      </div>
+      <input type="text" class="roster-search" id="roster-search"
+             placeholder="Filter by name…" autocomplete="off">
+      <div class="roster-list" id="roster-list">
+        <!-- Populated by JS -->
+      </div>
+      <p class="text-muted text-sm" style="margin-top:.5rem;">
+        Drag a name onto any empty seat, or drag between seats to swap.
+      </p>
+    </div>
+
+    <!-- Rules panels -->
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="card-title" style="color:var(--danger);">Do not seat together</div>
+      {% if per_event_rules.not_together %}
+        {% for i, pair in per_event_rules.not_together|enumerate %}
+        <div style="display:flex; align-items:center; justify-content:space-between;
+                    padding:.4rem 0; border-bottom:1px solid var(--parchment-dk);">
+          <span class="text-sm" style="color:var(--danger);">
+            ✕ {{ couple_name_map.get(pair[0], 'Unknown') }} / {{ couple_name_map.get(pair[1], 'Unknown') }}
+          </span>
+          <form method="POST" action="{{ url_for('seating.save_rules', event_id=event.id) }}">
+            <input type="hidden" name="action" value="remove_not_together">
+            <input type="hidden" name="idx" value="{{ i }}">
+            <button class="btn btn-outline btn-sm">✕</button>
+          </form>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted text-sm" style="font-style:italic;">None set.</p>
+      {% endif %}
+      <form method="POST" action="{{ url_for('seating.save_rules', event_id=event.id) }}"
+            style="margin-top:.8rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:flex-end;">
+        <input type="hidden" name="action" value="add_not_together">
+        <div class="form-group" style="min-width:130px;">
+          <label>Couple 1</label>
+          <select name="couple1_id">
+            <option value="">— Select —</option>
+            {% for c in couples %}<option value="{{ c.id }}">{{ c.couple_label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="min-width:130px;">
+          <label>Couple 2</label>
+          <select name="couple2_id">
+            <option value="">— Select —</option>
+            {% for c in couples %}<option value="{{ c.id }}">{{ c.couple_label }}</option>{% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm">Add</button>
+      </form>
+    </div>
+
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="card-title" style="color:var(--success);">Prefer same table</div>
+      {% if per_event_rules.prefer_together %}
+        {% for i, pair in per_event_rules.prefer_together|enumerate %}
+        <div style="display:flex; align-items:center; justify-content:space-between;
+                    padding:.4rem 0; border-bottom:1px solid var(--parchment-dk);">
+          <span class="text-sm" style="color:var(--success);">
+            ♦ {{ couple_name_map.get(pair[0], 'Unknown') }} / {{ couple_name_map.get(pair[1], 'Unknown') }}
+          </span>
+          <form method="POST" action="{{ url_for('seating.save_rules', event_id=event.id) }}">
+            <input type="hidden" name="action" value="remove_prefer_together">
+            <input type="hidden" name="idx" value="{{ i }}">
+            <button class="btn btn-outline btn-sm">✕</button>
+          </form>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted text-sm" style="font-style:italic;">None set.</p>
+      {% endif %}
+      <form method="POST" action="{{ url_for('seating.save_rules', event_id=event.id) }}"
+            style="margin-top:.8rem; display:flex; gap:.5rem; flex-wrap:wrap; align-items:flex-end;">
+        <input type="hidden" name="action" value="add_prefer_together">
+        <div class="form-group" style="min-width:130px;">
+          <label>Couple 1</label>
+          <select name="couple1_id">
+            <option value="">— Select —</option>
+            {% for c in couples %}<option value="{{ c.id }}">{{ c.couple_label }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="form-group" style="min-width:130px;">
+          <label>Couple 2</label>
+          <select name="couple2_id">
+            <option value="">— Select —</option>
+            {% for c in couples %}<option value="{{ c.id }}">{{ c.couple_label }}</option>{% endfor %}
+          </select>
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm">Add</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Custom rules</div>
+      {% if per_event_rules.custom %}
+        {% for i, rule in per_event_rules.custom|enumerate %}
+        <div style="display:flex; align-items:flex-start; justify-content:space-between;
+                    gap:.5rem; padding:.4rem 0; border-bottom:1px solid var(--parchment-dk);">
+          <span class="text-sm" style="flex:1; font-style:italic;">"{{ rule }}"</span>
+          <form method="POST" action="{{ url_for('seating.save_rules', event_id=event.id) }}">
+            <input type="hidden" name="action" value="remove_custom">
+            <input type="hidden" name="idx" value="{{ i }}">
+            <button class="btn btn-outline btn-sm">✕</button>
+          </form>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted text-sm" style="font-style:italic;">None set.</p>
+      {% endif %}
+      <form method="POST" action="{{ url_for('seating.save_rules', event_id=event.id) }}"
+            style="margin-top:.8rem;">
+        <input type="hidden" name="action" value="add_custom">
+        <div class="form-group" style="margin-bottom:.6rem;">
+          <label for="custom_rule">Custom rule</label>
+          <input type="text" id="custom_rule" name="custom_rule"
+                 placeholder='e.g. "Seat the President near the head table"'>
+        </div>
+        <button type="submit" class="btn btn-outline btn-sm">Add rule</button>
+      </form>
+    </div>
+
+    <!-- Permanent rules management -->
+    <div id="permanent-rules" class="card" style="margin-top:1rem; border-top-color:var(--burgundy);">
+      <div class="card-title" style="color:var(--burgundy);">Manage permanent rules</div>
+      <p class="text-muted text-sm" style="margin-bottom:.8rem;">
+        These rules apply to every event. Toggle them on or off, or remove one entirely.
+      </p>
+
+      {% if global_rules %}
+      <div style="margin-bottom:1rem;">
+        {% for rule in global_rules %}
+        <div style="display:flex; align-items:center; gap:.6rem;
+                    padding:.4rem 0; border-bottom:1px solid var(--parchment-dk);">
+          <span class="text-sm" style="flex:1; {% if not rule.is_active %}color:var(--ink-muted); text-decoration:line-through;{% endif %}">
+            {{ rule.description }}
+          </span>
+          <form method="POST" action="{{ url_for('seating.toggle_global_rule', rule_id=rule.id) }}">
+            <input type="hidden" name="event_id" value="{{ event.id }}">
+            <button class="btn {% if rule.is_active %}btn-gold{% else %}btn-outline{% endif %} btn-sm">
+              {% if rule.is_active %}Active{% else %}Disabled{% endif %}
+            </button>
+          </form>
+          <form method="POST" action="{{ url_for('seating.delete_global_rule', rule_id=rule.id) }}"
+                onsubmit="return confirm('Delete this permanent rule? This can\'t be undone.')">
+            <input type="hidden" name="event_id" value="{{ event.id }}">
+            <button class="btn btn-danger btn-sm">Delete</button>
+          </form>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="text-muted text-sm" style="font-style:italic; margin-bottom:.8rem;">
+          No permanent rules defined yet.
+        </p>
+      {% endif %}
+
+      <!-- Add new permanent rule -->
+      <form method="POST" action="{{ url_for('seating.add_global_rule') }}"
+            style="display:flex; gap:.6rem; align-items:flex-end; margin-top:.5rem;">
+        <input type="hidden" name="event_id" value="{{ event.id }}">
+        <div class="form-group" style="flex:1; margin-bottom:0;">
+          <label for="new_global_rule">Add permanent rule</label>
+          <input type="text" id="new_global_rule" name="description"
+                 placeholder='e.g. "Couples must not sit in adjacent seats"'
+                 required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-sm" style="margin-bottom:0;">Add</button>
+      </form>
+    </div>
+
+  </div>
+
+  <!-- ── RIGHT PANEL: drag-and-drop canvas ─────────────────────────────── -->
+  <div>
+    <div class="legend" style="margin-bottom:.8rem;">
+      <span class="legend-item"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#5B8DB8;"></span> Male</span>
+      <span class="legend-item"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#C4637A;"></span> Female</span>
+      <span class="legend-item"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#7A6650;"></span> Not specified</span>
+      <span class="legend-item">⭐ Officer</span>
+      <span class="legend-item">🔒 Locked (AI won't move)</span>
+    </div>
+
+    <div class="tables-canvas" id="tables-canvas">
+      <!-- Populated by JS -->
+    </div>
+
+    <!-- Save bar -->
+    <div class="save-bar">
+      <div class="legend">
+        Drag seats to rearrange · Click 🔒 to lock/unlock · Click ✕ to unassign
+      </div>
+      <div style="display:flex; align-items:center; gap:1rem;">
+        <span class="save-status" id="save-status">No unsaved changes</span>
+        <button class="btn btn-primary" id="save-btn" onclick="saveCanvas()" disabled>
+          Save seating
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% else %}
+<div class="card" style="text-align:center; padding:3rem;">
+  <p class="text-muted">No table layout configured yet.</p>
+  <a href="{{ url_for('table_planner.planner', event_id=event.id) }}"
+     class="btn btn-primary" style="margin-top:1rem;">⊞ Set table layout</a>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Data from server ──────────────────────────────────────────────────────────
+const EVENT_ID   = {{ event.id }};
+const SAVE_URL   = "{{ url_for('seating.save_canvas', event_id=event.id) }}";
+const LOCK_URL   = "{{ url_for('seating.toggle_lock', event_id=event.id) }}";
+const TABLE_CFG  = {{ event.table_config | tojson }};
+
+// All confirmed attendees
+const ALL_PEOPLE = [
+  {% for a in attendees %}
+  {
+    person_id: {{ a.person_id or 'null' }},
+    guest_id:  {{ a.guest_id or 'null' }},
+    name:      {{ a.name | tojson }},
+    type:      {{ a.type | tojson }},
+    is_officer: {{ 'true' if a.is_officer else 'false' }},
+    gender:     {{ a.gender | tojson }},
+    partner_id: {{ a.partner_id or 'null' }},
+    {% if a.get('host_name') %}host_name: {{ a.host_name | tojson }},{% endif %}
+  },
+  {% endfor %}
+];
+
+// Current assignments from DB
+const INIT_ASSIGNMENTS = [
+  {% for sa in assignments %}
+  {
+    table_num: {{ sa.table_num }},
+    seat_num:  {{ sa.seat_num }},
+    person_id: {{ sa.person_id or 'null' }},
+    guest_id:  {{ sa.guest_id or 'null' }},
+    is_locked: {{ 'true' if sa.is_locked else 'false' }},
+  },
+  {% endfor %}
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+// canvas[table_num][seat_num] = { person_id, guest_id, is_locked } | null
+const canvas = {};
+let isDirty = false;
+let dragPayload = null; // { person_id, guest_id, name, type, is_officer, from: {table,seat}|'roster' }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function personKey(pid, gid) {
+  return pid ? `p${pid}` : `g${gid}`;
+}
+function findPerson(pid, gid) {
+  return ALL_PEOPLE.find(p =>
+    pid ? p.person_id === pid : p.guest_id === gid
+  );
+}
+function genderColor(gender) {
+  if (gender === 'M') return '#5B8DB8';   // steel blue
+  if (gender === 'F') return '#C4637A';   // rose
+  return '#7A6650';                        // neutral grey
+}
+
+// ── Init canvas state from assignments ───────────────────────────────────────
+function initState() {
+  TABLE_CFG.tables.forEach(t => {
+    canvas[t.id] = {};
+    for (let s = 1; s <= t.size; s++) canvas[t.id][s] = null;
+  });
+  INIT_ASSIGNMENTS.forEach(a => {
+    if (canvas[a.table_num]) {
+      canvas[a.table_num][a.seat_num] = {
+        person_id: a.person_id,
+        guest_id:  a.guest_id,
+        is_locked: a.is_locked,
+      };
+    }
+  });
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  renderTables();
+  renderRoster();
+  updateCounts();
+}
+
+function renderTables() {
+  const container = document.getElementById('tables-canvas');
+  container.innerHTML = '';
+
+  TABLE_CFG.tables.forEach(t => {
+    const tnum = t.id;
+    const label = t.label || `Table ${tnum}`;
+    const size  = t.size;
+    const occupied = Object.values(canvas[tnum]).filter(Boolean).length;
+
+    const card = document.createElement('div');
+    card.className = 'table-card';
+    card.innerHTML = `
+      <div class="table-card-header">
+        <span class="table-label">${label}</span>
+        <span class="table-count">${occupied} / ${size} seats filled</span>
+      </div>
+      <div class="seats-grid" id="table-${tnum}-seats"></div>
+    `;
+    container.appendChild(card);
+
+    const grid = card.querySelector(`#table-${tnum}-seats`);
+    for (let snum = 1; snum <= size; snum++) {
+      grid.appendChild(renderSeat(tnum, snum));
+    }
+  });
+}
+
+function renderSeat(tnum, snum) {
+  const slot = document.createElement('div');
+  slot.className = 'seat-slot';
+  slot.dataset.table = tnum;
+  slot.dataset.seat  = snum;
+
+  const occ = canvas[tnum][snum];
+
+  if (occ) {
+    const p = findPerson(occ.person_id, occ.guest_id);
+    const name = p ? p.name : '?';
+    const type = p ? p.type : 'guest';
+    const isOfficer = p ? p.is_officer : false;
+    const hostLine = (p && p.host_name) ? `<span style="font-size:.65rem;color:var(--ink-muted);">guest of ${p.host_name}</span>` : '';
+
+    slot.classList.add('occupied');
+    if (occ.is_locked) slot.classList.add('locked');
+
+    slot.innerHTML = `
+      <span class="seat-num">${snum}</span>
+      <div class="seat-actions">
+        <button class="seat-btn" title="${occ.is_locked ? 'Unlock' : 'Lock'}"
+                onclick="toggleLockUI(${tnum},${snum})">${occ.is_locked ? '🔒' : '🔓'}</button>
+        <button class="seat-btn" title="Unassign" onclick="unassignSeat(${tnum},${snum})">✕</button>
+      </div>
+      <div class="seat-occupant" draggable="true"
+           data-table="${tnum}" data-seat="${snum}">
+        ${isOfficer ? '⭐ ' : ''}${name}
+        ${hostLine}
+      </div>
+      <div class="seat-type-bar" style="background:${genderColor(p ? p.gender : '')};"></div>
+    `;
+
+    // Drag from occupied seat
+    const occ_el = slot.querySelector('.seat-occupant');
+    occ_el.addEventListener('dragstart', e => {
+      dragPayload = {
+        person_id: occ.person_id,
+        guest_id:  occ.guest_id,
+        name, type, isOfficer,
+        from: { table: tnum, seat: snum },
+      };
+      occ_el.closest('.seat-slot').classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    occ_el.addEventListener('dragend', () => {
+      document.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    });
+  } else {
+    slot.innerHTML = `<span class="seat-num">${snum}</span>`;
+  }
+
+  // Drop target on every slot
+  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+  slot.addEventListener('drop', e => {
+    e.preventDefault();
+    slot.classList.remove('drag-over');
+    if (!dragPayload) return;
+
+    const destTable = parseInt(slot.dataset.table);
+    const destSeat  = parseInt(slot.dataset.seat);
+
+    // Don't drop on a locked seat
+    if (canvas[destTable][destSeat] && canvas[destTable][destSeat].is_locked) return;
+
+    const src = dragPayload.from;
+    const destOcc = canvas[destTable][destSeat];
+
+    if (src === 'roster') {
+      // Coming from the unassigned roster — place directly
+      canvas[destTable][destSeat] = {
+        person_id: dragPayload.person_id,
+        guest_id:  dragPayload.guest_id,
+        is_locked: false,
+      };
+    } else {
+      // Swap: dest occupant goes to src seat
+      canvas[src.table][src.seat] = destOcc || null;
+      canvas[destTable][destSeat] = {
+        person_id: dragPayload.person_id,
+        guest_id:  dragPayload.guest_id,
+        is_locked: false,
+      };
+    }
+
+    dragPayload = null;
+    markDirty();
+    render();
+  });
+
+  return slot;
+}
+
+function renderRoster() {
+  const filter = document.getElementById('roster-search').value.toLowerCase();
+  const assigned = new Set();
+  Object.values(canvas).forEach(seats => {
+    Object.values(seats).forEach(occ => {
+      if (occ) assigned.add(personKey(occ.person_id, occ.guest_id));
+    });
+  });
+
+  const unassigned = ALL_PEOPLE.filter(p => {
+    if (assigned.has(personKey(p.person_id, p.guest_id))) return false;
+    if (filter && !p.name.toLowerCase().includes(filter)) return false;
+    return true;
+  });
+
+  const list = document.getElementById('roster-list');
+  list.innerHTML = '';
+
+  if (unassigned.length === 0) {
+    list.innerHTML = '<div style="padding:.8rem; font-size:.82rem; color:var(--success); text-align:center;">✓ All guests seated</div>';
+  } else {
+    unassigned.forEach(p => {
+      const el = document.createElement('div');
+      el.className = 'roster-person';
+      el.draggable = true;
+      el.innerHTML = `
+        <span class="type-dot ${p.gender === 'M' ? 'dot-male' : p.gender === 'F' ? 'dot-female' : 'dot-neutral'}"></span>
+        ${p.is_officer ? '<span class="officer-star">⭐</span>' : ''}
+        <span>${p.name}</span>
+        ${p.host_name ? `<span style="font-size:.7rem;color:var(--ink-muted);">(guest)</span>` : ''}
+      `;
+      el.addEventListener('dragstart', e => {
+        dragPayload = { person_id: p.person_id, guest_id: p.guest_id, name: p.name, type: p.type, from: 'roster' };
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => el.classList.remove('dragging'));
+      list.appendChild(el);
+    });
+  }
+
+  document.getElementById('unassigned-count').textContent =
+    unassigned.length > 0 ? `(${unassigned.length})` : '';
+}
+
+function updateCounts() {
+  let total = 0;
+  Object.values(canvas).forEach(seats => {
+    Object.values(seats).forEach(occ => { if (occ) total++; });
+  });
+  const allSeated = total === ALL_PEOPLE.length && ALL_PEOPLE.length > 0;
+  document.getElementById('assigned-count').innerHTML =
+    `${total}${allSeated ? ' <span style="color:var(--success);font-size:.8rem;">✓ complete</span>' : ''}`;
+}
+
+// ── Actions ───────────────────────────────────────────────────────────────────
+function unassignSeat(tnum, snum) {
+  if (canvas[tnum][snum] && canvas[tnum][snum].is_locked) {
+    if (!confirm('This seat is locked. Unassign anyway?')) return;
+  }
+  canvas[tnum][snum] = null;
+  markDirty();
+  render();
+}
+
+function toggleLockUI(tnum, snum) {
+  if (!canvas[tnum][snum]) return;
+  canvas[tnum][snum].is_locked = !canvas[tnum][snum].is_locked;
+  markDirty();
+  render();
+}
+
+// ── Dirty / save ──────────────────────────────────────────────────────────────
+function markDirty() {
+  isDirty = true;
+  const st = document.getElementById('save-status');
+  st.textContent = 'Unsaved changes';
+  st.className = 'save-status dirty';
+  document.getElementById('save-btn').disabled = false;
+}
+
+async function saveCanvas() {
+  // Build payload
+  const tables = [];
+  TABLE_CFG.tables.forEach(t => {
+    const seats = [];
+    for (let s = 1; s <= t.size; s++) {
+      const occ = canvas[t.id][s];
+      if (occ) {
+        seats.push({
+          seat_num:  s,
+          person_id: occ.person_id,
+          guest_id:  occ.guest_id,
+          is_locked: occ.is_locked,
+        });
+      }
+    }
+    tables.push({ table_num: t.id, seats });
+  });
+
+  const st = document.getElementById('save-status');
+  const btn = document.getElementById('save-btn');
+  st.textContent = 'Saving…';
+  st.className = 'save-status';
+  btn.disabled = true;
+
+  try {
+    const r = await fetch(SAVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tables }),
+    });
+    const data = await r.json();
+    if (data.ok) {
+      isDirty = false;
+      st.textContent = 'Saved ✓';
+      st.className = 'save-status saved';
+    } else {
+      throw new Error(data.error || 'Unknown error');
+    }
+  } catch (err) {
+    st.textContent = `Save failed: ${err.message}`;
+    st.className = 'save-status error';
+    btn.disabled = false;
+  }
+}
+
+// Warn before navigating away with unsaved changes -- but not when the
+// navigation is the user intentionally submitting one of our own forms
+// (add rule, generate AI proposal, remove rule, etc). Those are known,
+// deliberate actions, not accidental tab closes/back-button presses, and
+// the page reload that follows makes the canvas "unsaved changes" concern
+// moot anyway.
+document.querySelectorAll('form').forEach(f => {
+  f.addEventListener('submit', () => { isDirty = false; });
+});
+
+window.addEventListener('beforeunload', e => {
+  if (isDirty) { e.preventDefault(); e.returnValue = ''; }
+});
+
+// ── Filter roster ─────────────────────────────────────────────────────────────
+document.getElementById('roster-search').addEventListener('input', renderRoster);
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+initState();
+render();
+</script>
+{% endblock %}

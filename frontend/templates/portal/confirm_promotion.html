@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Confirm your seat — Chevalier Events{% endblock %}
+
+{% block content %}
+<div style="max-width:440px; margin:3rem auto;">
+  <div class="card">
+    <div style="text-align:center; margin-bottom:1.5rem;">
+      <img src="{{ url_for('static', filename='img/Chevalier_Logo.jpg') }}"
+           alt="Chevalier Logo" style="height:72px; margin-bottom:1rem;">
+
+      {% if already_resolved and rsvp.status == 'confirmed' %}
+        <div style="font-size:2rem; color:var(--success);">✓</div>
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          You're confirmed!
+        </h1>
+        <p class="text-muted text-sm">
+          Your seat for {{ event.title }} on {{ event.event_date.strftime("%A, %B %d, %Y") }} is set.
+          We look forward to seeing you.
+        </p>
+
+      {% elif already_resolved %}
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          This offer has already been resolved
+        </h1>
+        <p class="text-muted text-sm">
+          This waitlist offer for {{ event.title }} is no longer open -- it's already been
+          confirmed, released, or has expired.
+        </p>
+
+      {% elif expired %}
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          This offer has expired
+        </h1>
+        <p class="text-muted text-sm">
+          Your 24-hour window to confirm this seat for {{ event.title }} has passed, and it's
+          been offered to the next person on the waitlist. Please log in to the portal if
+          you'd like to rejoin the waitlist.
+        </p>
+
+      {% else %}
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          A seat is being held for you
+        </h1>
+        <p class="text-muted text-sm">
+          {{ event.title }} — {{ event.event_date.strftime("%A, %B %d, %Y") }}
+        </p>
+        <p class="text-muted text-sm" style="margin-top:.5rem;">
+          Please confirm by {{ rsvp.promotion_expires_at.strftime("%B %d at %I:%M %p") }}
+          or the seat will pass to the next person on the waitlist.
+        </p>
+      {% endif %}
+    </div>
+
+    {% if not already_resolved and not expired %}
+    <form method="POST" style="margin-bottom:.6rem;">
+      <input type="hidden" name="action" value="confirm">
+      <button type="submit" class="btn btn-primary" style="width:100%;">
+        Yes, confirm my seat
+      </button>
+    </form>
+    <form method="POST" onsubmit="return confirm('Release this seat back to the waitlist?')">
+      <input type="hidden" name="action" value="release">
+      <button type="submit" class="btn btn-outline btn-sm" style="width:100%;">
+        I can't make it -- release my seat
+      </button>
+    </form>
+    {% else %}
+    <a href="{{ url_for('portal.home') }}" class="btn btn-outline" style="width:100%; text-align:center;">
+      Go to the portal
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

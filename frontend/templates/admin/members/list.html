@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Members — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Members &amp; Partners</h1>
+  <div style="display:flex; gap:.6rem;">
+    <a href="{{ url_for('import_members.upload') }}" class="btn btn-outline">↑ Import CSV</a>
+    <a href="{{ url_for('members.manage_tags') }}" class="btn btn-outline">🏷 Manage Tags</a>
+    <form method="POST" action="{{ url_for('members.bulk_invite') }}"
+          onsubmit="return confirm('Send invitation emails to all members with an email address and no portal access yet?')">
+      <button type="submit" class="btn btn-outline">✉ Bulk invite</button>
+    </form>
+    <a href="{{ url_for('members.members_pdf') }}" class="btn btn-outline">⬇ Print PDF</a>
+    <a href="{{ url_for('members.add_member') }}" class="btn btn-gold">+ Add member</a>
+  </div>
+</div>
+
+<div class="card">
+  <form method="GET" class="search-bar">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search by name, email, or role…">
+    <select name="type" style="max-width:170px;">
+      <option value="all"       {% if ftype=='all'       %}selected{% endif %}>All records</option>
+      <option value="member"    {% if ftype=='member'    %}selected{% endif %}>Chevaliers only</option>
+      <option value="honoraire" {% if ftype=='honoraire' %}selected{% endif %}>Membres Honoraires only</option>
+      <option value="aspirant"  {% if ftype=='aspirant'  %}selected{% endif %}>Aspirants only</option>
+      <option value="partner"   {% if ftype=='partner'   %}selected{% endif %}>Partners only</option>
+    </select>
+    <select name="sort" style="max-width:160px;">
+      <option value="last_name"  {% if sort=='last_name'  %}selected{% endif %}>Sort by last name</option>
+      <option value="first_name" {% if sort=='first_name' %}selected{% endif %}>Sort by first name</option>
+      <option value="officer"    {% if sort=='officer'    %}selected{% endif %}>Sort by officer</option>
+    </select>
+    <button type="submit" class="btn btn-outline">Search</button>
+    {% if q %}<a href="{{ url_for('members.list_members') }}" class="btn btn-outline">Clear</a>{% endif %}
+  </form>
+
+  {% if persons %}
+    {% set member_groups = [
+        ('Chevaliers',        'member'),
+        ('Members Honoraire','honoraire'),
+        ('Aspirants',         'aspirant'),
+    ] %}
+
+    {% for group_label, group_type in member_groups %}
+      {% set group = persons | selectattr('person_type','eq',group_type) | list %}
+      {% if group %}
+      <div style="margin-bottom:1.5rem;">
+        <div style="font-family:sans-serif; font-size:.72rem; font-weight:700;
+                    letter-spacing:.1em; text-transform:uppercase; color:var(--burgundy);
+                    border-bottom:2px solid var(--burgundy); padding-bottom:.3rem;
+                    margin-bottom:.6rem;">
+          {{ group_label }}
+          <span style="font-weight:normal; color:var(--ink-muted);">({{ group|length }})</span>
+        </div>
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Portal</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in group %}
+            {# Member row #}
+            <tr>
+              <td>
+                <a href="{{ url_for('members.edit_member', person_id=p.id) }}"
+                   style="color:var(--burgundy-dk); font-weight:500;">{{ p.display_name }}</a>
+              </td>
+              <td>
+                {% if p.is_officer %}
+                  <span class="badge badge-gold">{{ p.officer_role or 'Officer' }}</span>
+                {% else %}<span class="text-muted">--</span>{% endif %}
+                {% if p.is_admin %}
+                  <span class="badge" style="background:var(--burgundy);color:#fff;font-size:.65rem;margin-left:.2rem;">Admin</span>
+                {% endif %}
+              </td>
+              <td class="text-sm text-muted">{{ p.email or '--' }}</td>
+              <td class="text-sm text-muted">{{ p.phone or '--' }}</td>
+              <td>
+                {% if p.can_login %}
+                  <span class="badge badge-success">Active</span>
+                {% else %}<span class="badge badge-muted">No login</span>{% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('members.edit_member', person_id=p.id) }}"
+                   class="btn btn-outline btn-sm">Edit</a>
+              </td>
+            </tr>
+            {# Partner row — indented directly below #}
+            {% if p.partner %}
+            <tr style="background:var(--parchment);">
+              <td style="padding-left:1.8rem; font-size:.85rem;">
+                <span style="color:var(--ink-muted); margin-right:.3rem;">+</span>
+                <a href="{{ url_for('members.edit_member', person_id=p.partner.id) }}"
+                   style="color:var(--ink-muted);">{{ p.partner.display_name }}</a>
+              </td>
+              <td><span class="text-muted" style="font-size:.8rem;">partner</span></td>
+              <td class="text-sm text-muted">{{ p.partner.email or '--' }}</td>
+              <td class="text-sm text-muted">{{ p.partner.phone or '--' }}</td>
+              <td>
+                {% if p.partner.can_login %}
+                  <span class="badge badge-success" style="font-size:.65rem;">Active</span>
+                {% else %}
+                  <span class="badge badge-muted" style="font-size:.65rem;">No login</span>
+                {% endif %}
+              </td>
+              <td>
+                <a href="{{ url_for('members.edit_member', person_id=p.partner.id) }}"
+                   class="btn btn-outline btn-sm">Edit</a>
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    {% endfor %}
+    <p class="text-muted text-sm" style="margin-top:.8rem;">
+      {{ persons|length }} record{{ 's' if persons|length != 1 }}
+    </p>
+  {% else %}
+    <p class="text-muted text-sm">
+      {% if q %}No results for "{{ q }}".
+      {% else %}No members yet. <a href="{{ url_for('members.add_member') }}" style="color:var(--gold);">Add the first one</a>.{% endif %}
+    </p>
+  {% endif %}
+{% endblock %}

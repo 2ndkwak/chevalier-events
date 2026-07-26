@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A seat has opened up -- {{ event_title }}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#EDE5D0; font-family:Georgia,'Times New Roman',serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#EDE5D0; padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+               style="max-width:600px; width:100%; background-color:#FFFFFF; border-radius:6px; overflow:hidden; box-shadow:0 4px 20px rgba(30,18,8,.15);">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="background-color:#4A1020; padding:32px 24px 26px 24px; border-bottom:3px solid #B8912A;">
+              <img src="{{ logo_url }}" alt="Confrerie des Chevaliers du Tastevin" width="86"
+                   style="display:block; margin:0 auto 14px auto; border-radius:50%; border:2px solid #D4A843;">
+              <div style="font-family:Georgia,serif; font-size:12px; letter-spacing:2.5px; text-transform:uppercase; color:#D4A843;">
+                Confrerie des Chevaliers du Tastevin
+              </div>
+              <div style="font-family:Georgia,serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#F5E9C8; margin-top:4px;">
+                Sous Commanderie de Cleveland
+              </div>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:36px 40px 8px 40px;">
+              <div style="font-family:Georgia,serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#B8912A; text-align:center; margin-bottom:22px;">
+                Jamais en Vain, Toujours en Vin
+              </div>
+              <p style="font-family:Georgia,serif; font-size:17px; color:#1E1208; line-height:1.6; margin:0 0 18px 0;">
+                {{ greeting }},
+              </p>
+              <p style="font-family:Georgia,serif; font-size:16px; color:#3D2B1A; line-height:1.7; margin:0 0 18px 0;">
+                A seat has opened up for <strong>{{ event_title }}</strong> on {{ event_date }},
+                and you're next on the waitlist. Your seat{{ seat_plural }} {{ is_are }} being held for you.
+              </p>
+              <p style="font-family:Georgia,serif; font-size:16px; color:#8B1A1A; line-height:1.7; margin:0 0 30px 0;">
+                Please confirm within <strong>24 hours</strong> -- if we don't hear from you by then,
+                the seat will be offered to the next person on the list.
+              </p>
+            </td>
+          </tr>
+
+          <!-- CTA button -->
+          <tr>
+            <td align="center" style="padding:0 40px 18px 40px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" bgcolor="#B8912A" style="border-radius:5px;">
+                    <a href="{{ link }}"
+                       style="display:inline-block; padding:14px 38px; font-family:Georgia,serif; font-size:15px;
+                              letter-spacing:.5px; color:#FFFFFF; text-decoration:none; border-radius:5px;">
+                      Confirm My Seat
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Fallback link -->
+          <tr>
+            <td style="padding:0 40px 32px 40px;">
+              <p style="font-family:Georgia,serif; font-size:12.5px; color:#7A6650; line-height:1.6; margin:0; text-align:center;">
+                If the button above doesn't work, copy and paste this link into your browser:<br>
+                <a href="{{ link }}" style="color:#8C2A3E; word-break:break-all;">{{ link }}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding:0 40px;">
+              <hr style="border:none; border-top:1px solid #E0D5BC; margin:0;">
+            </td>
+          </tr>
+
+          <!-- Footer note -->
+          <tr>
+            <td style="padding:24px 40px 34px 40px;">
+              <p style="font-family:Georgia,serif; font-size:12.5px; color:#7A6650; line-height:1.6; margin:0 0 20px 0; text-align:center;">
+                If you're unable to attend, please let us know as soon as you can using the
+                button above, so the seat can be offered to the next member on the waitlist.
+              </p>
+              <p style="font-family:Georgia,serif; font-size:14px; color:#3D2B1A; line-height:1.6; margin:0; text-align:center; font-style:italic;">
+                Tastevin en Main
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Sub-footer -->
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%;">
+          <tr>
+            <td align="center" style="padding:18px 24px;">
+              <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:11px; color:#7A6650; margin:0;">
+                Confrerie des Chevaliers du Tastevin &mdash; Sous Commanderie de Cleveland
+              </p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

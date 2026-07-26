@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Event' if event else 'Create Event' }} -- Chevalier Events{% endblock %}
+
+{% block head %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.min.css" rel="stylesheet">
+<style>
+  .ql-toolbar { border-color: var(--parchment-md) !important; border-radius: var(--radius) var(--radius) 0 0; }
+  .ql-container { border-color: var(--parchment-md) !important; border-radius: 0 0 var(--radius) var(--radius); font-size:.95rem; }
+  .ql-editor { min-height: 120px; }
+  .ql-editor p { margin-bottom: .4rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{{ 'Edit -- ' + event.title if event else 'Create event' }}</h1>
+  <div style="display:flex; gap:.5rem;">
+    <a href="{{ url_for('events.list_events') }}" class="btn btn-outline"><- Back to events</a>
+    <a href="{{ url_for('events.list_events', show='past') }}" class="btn btn-outline">[Archive] Archived events</a>
+  </div>
+</div>
+
+{% if event %}
+<!-- Status & actions bar -->
+<div class="card" style="border-top-color:var(--gold); padding:1rem 1.5rem;">
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
+    <div style="display:flex; align-items:center; gap:1rem;">
+      {% if event.is_published %}
+        <span class="badge badge-success" style="font-size:.8rem; padding:.25rem .8rem;">Published</span>
+        <span class="text-muted text-sm">Visible to members on the portal</span>
+      {% else %}
+        <span class="badge badge-muted" style="font-size:.8rem; padding:.25rem .8rem;">Draft</span>
+        <span class="text-muted text-sm">Not yet visible to members</span>
+      {% endif %}
+    </div>
+    <div style="display:flex; gap:.6rem; flex-wrap:wrap;">
+      {% if event.is_published %}
+        <form method="POST" action="{{ url_for('events.unpublish_event', event_id=event.id) }}" style="display:inline;">
+          <button class="btn btn-outline btn-sm">Unpublish</button>
+        </form>
+        <form method="POST" action="{{ url_for('events.send_promotion', event_id=event.id) }}" style="display:inline;">
+          <button class="btn btn-gold btn-sm"
+                  onclick="return confirm('Send promotion email to all members?')">
+            [Email] Send promotion email
+          </button>
+        </form>
+      {% else %}
+        <form method="POST" action="{{ url_for('events.publish_event', event_id=event.id) }}" style="display:inline;">
+          <button class="btn btn-primary btn-sm">Publish to portal</button>
+        </form>
+      {% endif %}
+      <a href="{{ url_for('table_planner.planner', event_id=event.id) }}"
+         class="btn btn-outline btn-sm">[+] Plan tables</a>
+      <a href="{{ url_for('seating.seating_home', event_id=event.id) }}"
+         class="btn btn-outline btn-sm">Seating</a>
+      <a href="{{ url_for('events.rsvp_list', event_id=event.id) }}"
+         class="btn btn-outline btn-sm">View RSVPs ({{ event.confirmed_count }})</a>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- Event details form -->
+<div class="card">
+  <div class="card-title">Event details</div>
+  <form method="POST" id="event-form"
+        action="{{ url_for('events.edit_event', event_id=event.id) if event else url_for('events.create_event') }}">
+
+    <div class="form-grid">
+      <div class="form-group full">
+        <label for="title">Event title *</label>
+        <input type="text" id="title" name="title" required
+               placeholder="e.g. Chapitre de Printemps"
+               value="{{ event.title if event else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="event_date">Date *</label>
+        <input type="date" id="event_date" name="event_date" required
+               value="{{ event.event_date.strftime('%Y-%m-%d') if event else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="event_time">Time</label>
+        <input type="time" id="event_time" name="event_time"
+               value="{{ event.event_date.strftime('%H:%M') if event else '18:30' }}">
+      </div>
+      <div class="form-group">
+        <label for="rsvp_deadline_date">RSVP closes -- date</label>
+        <input type="date" id="rsvp_deadline_date" name="rsvp_deadline_date"
+               value="{{ event.rsvp_deadline.strftime('%Y-%m-%d') if event and event.rsvp_deadline else '' }}"
+               placeholder="Auto: 3 days before event">
+      </div>
+      <div class="form-group">
+        <label for="rsvp_deadline_time">RSVP closes -- time</label>
+        <input type="time" id="rsvp_deadline_time" name="rsvp_deadline_time"
+               value="{{ event.rsvp_deadline.strftime('%H:%M') if event and event.rsvp_deadline else '17:00' }}">
+      </div>
+      <div class="form-group full">
+        <p style="font-family:sans-serif; font-size:.78rem; color:var(--ink-muted);
+                  margin-top:-.4rem; font-style:italic;">
+          Defaults to 3 days before the event at 5:00 PM if left blank.
+          After this date and time, members cannot RSVP or cancel on the portal.
+        </p>
+      </div>
+      <div class="form-group">
+        <label for="capacity">Capacity (blank = unlimited)</label>
+        <input type="number" id="capacity" name="capacity" min="1"
+               placeholder="Unlimited"
+               value="{{ event.capacity if event and event.capacity else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="price_per_person">Price per person</label>
+        <input type="number" id="price_per_person" name="price_per_person"
+               min="0" step="0.01" placeholder="Leave blank if no charge"
+               value="{{ '%.2f'|format(event.price_per_person|float) if event and event.price_per_person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="venue_name">Venue name</label>
+        <input type="text" id="venue_name" name="venue_name"
+               value="{{ event.venue_name or '' if event else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="venue_address">Venue address</label>
+        <input type="text" id="venue_address" name="venue_address"
+               value="{{ event.venue_address or '' if event else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="teaser">Teaser (short hook line shown on the portal home list)</label>
+        <input type="text" id="teaser" name="teaser" maxlength="300"
+               placeholder="e.g. Summer Salon at the Taylors -- Chef Bob Sferra joins us for an unforgettable evening"
+               value="{{ event.teaser or '' if event else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="description">Description / invitation text (full details on the event page)</label>
+        <!-- Quill rich text editor -->
+        <div id="quill-editor"
+             style="background:#fff; border:1px solid var(--parchment-md);
+                    border-radius:var(--radius); min-height:120px; font-size:.95rem;">
+        </div>
+        <input type="hidden" id="description" name="description">
+      </div>
+      <div class="form-group">
+        <label for="dress_code">Dress code</label>
+        <input type="text" id="dress_code" name="dress_code"
+               placeholder="e.g. Black tie, Formal..."
+               value="{{ event.dress_code or '' if event else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="menu_notes">Menu notes</label>
+        <textarea id="menu_notes" name="menu_notes" rows="3">{{ event.menu_notes or '' if event else '' }}</textarea>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div class="flex gap-1">
+      <button type="submit" class="btn btn-primary">
+        {{ 'Save changes' if event else 'Create event' }}
+      </button>
+      <a href="{{ url_for('events.list_events') }}" class="btn btn-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{% if event %}
+<!-- Danger zone -->
+<div class="card" style="border-color:#F5D5D5; border-top-color:var(--danger);">
+  <div class="card-title" style="color:var(--danger);">Delete event</div>
+  <p class="text-muted text-sm" style="margin-bottom:1rem;">
+    Permanently deletes this event and all RSVPs. This cannot be undone.
+  </p>
+  <form method="POST" action="{{ url_for('events.delete_event', event_id=event.id) }}"
+        onsubmit="return confirm('Delete {{ event.title }}? All RSVPs will be lost. This cannot be undone.')">
+    <button class="btn btn-danger btn-sm">Delete this event</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+<script>
+  var quill = new Quill("#quill-editor", {
+    theme: "snow",
+    modules: {
+      toolbar: [
+        ["bold", "italic", "underline"],
+        [{ "color": [] }],
+        [{ "size": ["small", false, "large", "huge"] }],
+        [{ "list": "ordered" }, { "list": "bullet" }],
+        ["clean"]
+      ]
+    }
+  });
+
+  // Pre-populate with existing HTML content
+  var existing = {{ (event.description if event else "")|tojson }};
+  if (existing) {
+    quill.clipboard.dangerouslyPasteHTML(existing);
+  } else {
+    // New event: start with the standard pricing / payment / address
+    // boilerplate, so it doesn't need to be retyped for every event.
+    var defaultText =
+      "<p><br></p><p><br></p><p><br></p><p><br></p>" +
+      "<p>Price per person: $TBD. Or $TBD/person via PayPal at: TBD. " +
+      "If paid by check, make out to Cleveland Chevaliers and mail to: Mark Eisele</p>" +
+      "<p>2915 Winthrop Street</p>" +
+      "<p>Shaker Heights, Ohio 44120</p>" +
+      "<p><br></p>" +
+      "<p><strong>The Commanderie d'Am\u00e9rique strongly recommends using designated " +
+      "driver transportation to and from its national and local events, including taxis, " +
+      "limos, Uber/Lyft, group shuttles, or private car services.</strong></p>";
+    quill.clipboard.dangerouslyPasteHTML(defaultText);
+  }
+
+  // Copy HTML into hidden input on submit
+  document.getElementById("event-form").addEventListener("submit", function() {
+    document.getElementById("description").value = quill.root.innerHTML;
+  });
+</script>
+{% endblock %}

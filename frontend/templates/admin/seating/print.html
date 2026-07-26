@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Seating — {{ event.title }}</title>
+  <style>
+    /* ── Shared tokens ─────────────────────────────────────────────────── */
+    :root {
+      --burgundy:    #6B1A2A;
+      --gold:        #B8912A;
+      --gold-pale:   #F5E9C8;
+      --parchment:   #F9F5ED;
+      --ink:         #1E1208;
+      --ink-muted:   #7A6650;
+      --allergy-bg:  #FFF3CD;
+      --allergy-bd:  #D4A843;
+      --male:        #5B8DB8;
+      --female:      #C4637A;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* Force a consistent, explicit page margin instead of relying on the
+       browser/printer's own default — this is what was letting content
+       (especially the seating-chart labels) bleed past the left edge
+       once the on-screen preview padding was stripped out for printing. */
+    @page { size: letter; margin: 0.5in; }
+
+    body {
+      font-family: Georgia, "Times New Roman", serif;
+      font-size: 11pt;
+      color: var(--ink);
+      background: #fff;
+    }
+
+    /* ── Screen chrome ─────────────────────────────────────────────────── */
+    @media screen {
+      body { background: #e8e0d0; padding: 1.5rem; }
+      .screen-bar {
+        background: var(--burgundy);
+        color: #fff;
+        padding: .8rem 1.5rem;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .8rem;
+        font-family: sans-serif;
+      }
+      .screen-bar h2 { font-size: 1rem; font-weight: normal; letter-spacing: .04em; }
+      .screen-bar .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+      .btn {
+        font-family: sans-serif;
+        font-size: .78rem;
+        padding: .35rem 1rem;
+        border-radius: 4px;
+        border: 1px solid transparent;
+        cursor: pointer;
+        text-decoration: none;
+        display: inline-block;
+      }
+      .btn-gold    { background: var(--gold);    color: #fff; }
+      .btn-outline { background: transparent; color: #fff; border-color: rgba(255,255,255,.5); }
+      .btn-outline:hover { border-color: #fff; }
+
+      .tab-bar {
+        display: flex;
+        gap: 0;
+        margin-bottom: 1.5rem;
+        border-bottom: 2px solid var(--gold);
+        font-family: sans-serif;
+      }
+      .tab {
+        padding: .5rem 1.2rem;
+        font-size: .82rem;
+        letter-spacing: .05em;
+        text-transform: uppercase;
+        cursor: pointer;
+        border: none;
+        background: none;
+        color: var(--ink-muted);
+        border-bottom: 3px solid transparent;
+        margin-bottom: -2px;
+        font-weight: bold;
+      }
+      .tab.active { color: var(--burgundy); border-bottom-color: var(--burgundy); font-weight: bold; }
+      .tab:hover  { color: var(--burgundy); }
+
+      .print-section { display: none; }
+      .print-section.active { display: block; }
+
+      .page-preview {
+        background: #fff;
+        border-radius: 4px;
+        box-shadow: 0 2px 16px rgba(0,0,0,.15);
+        padding: 2rem;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+    }
+
+    /* ── Print base ────────────────────────────────────────────────────── */
+    @media print {
+      .screen-bar, .tab-bar { display: none !important; }
+      .print-section { display: none !important; }
+      .print-section.printing { display: block !important; }
+      .page-preview { box-shadow: none; padding: 0.25in; }
+      body { background: #fff; padding: 0; }
+    }
+
+    /* ── Common print elements ─────────────────────────────────────────── */
+    .print-header {
+      text-align: center;
+      border-bottom: 2px solid var(--burgundy);
+      padding-bottom: .6rem;
+      margin-bottom: 1.2rem;
+    }
+    .print-header .event-name {
+      font-size: 16pt;
+      color: var(--burgundy);
+      letter-spacing: .04em;
+    }
+    .print-header .event-meta {
+      font-size: 9pt;
+      color: var(--ink-muted);
+      font-family: sans-serif;
+      margin-top: .2rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .print-header .report-title {
+      font-size: 11pt;
+      font-style: italic;
+      color: var(--ink-muted);
+      margin-top: .15rem;
+    }
+
+    .allergy-flag {
+      font-size: 8pt;
+      font-family: sans-serif;
+      color: #7A5C10;
+      background: var(--allergy-bg);
+      border: 1px solid var(--allergy-bd);
+      border-radius: 3px;
+      padding: 1px 5px;
+      display: inline-block;
+      margin-top: 2px;
+    }
+
+    /* ── Form 1: Visual chart ──────────────────────────────────────────── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+    /* CSS Grid items don't reliably honor break-inside during printing in
+       most browsers, which was letting a table's circle get sliced across
+       a page boundary. Switch to an inline-block layout for print only —
+       inline-block participates in normal flow, where break-inside/
+       page-break-inside are actually respected. */
+    @media print {
+      .chart-grid {
+        display: block;
+        font-size: 0;   /* collapses the whitespace gap between inline-blocks */
+      }
+      .chart-table {
+        display: inline-block;
+        vertical-align: top;
+        width: 320px;
+        margin: 0 .5rem 1.5rem 0;
+        font-size: 1rem;   /* reset the font-size:0 from the parent */
+      }
+      /* Cap each printed page at 4 tables (2 rows of 2) so the grid never
+         grows taller than the page has room for, including the legend
+         line below it. Skipped on the very last table so an event whose
+         table count is an exact multiple of 4 doesn't waste a page. */
+      .chart-table:nth-of-type(4n):not(:last-of-type) {
+        page-break-after: always;
+        break-after: page;
+      }
+      /* The first table on each new forced page (5th, 9th, 13th...) can't
+         rely on the page's own top margin the way naturally-flowing
+         content can — that space isn't reliably applied to content
+         relocated by a forced break. Give it real padding-top instead,
+         which is part of the box itself and always survives. */
+      .chart-table:nth-of-type(4n+1):not(:first-of-type) {
+        padding-top: 0.55in;
+      }
+    }
+    .chart-table {
+      border: 1.5px solid var(--burgundy);
+      border-radius: 8px;
+      padding: .8rem;
+      page-break-inside: avoid;
+      break-inside: avoid-page;
+    }
+    .chart-table-label {
+      text-align: center;
+      font-family: sans-serif;
+      font-size: 8pt;
+      font-weight: bold;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--burgundy);
+      margin-bottom: .6rem;
+      border-bottom: 1px solid var(--gold-pale);
+      padding-bottom: .3rem;
+    }
+    .chart-circle {
+      position: relative;
+      margin: 0 auto;
+      /* width/height set by JS */
+    }
+    .chart-table-oval {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 80px; height: 50px;
+      border: 2px solid var(--burgundy);
+      border-radius: 50%;
+      background: var(--gold-pale);
+    }
+    .chart-seat {
+      position: absolute;
+      text-align: center;
+      transform: translate(-50%, -50%);
+      width: 72px;
+      overflow: visible;
+      /* left/top set by JS in px */
+    }
+    .chart-seat .seat-name {
+      white-space: normal;
+      overflow: visible;
+      word-break: break-word;
+      font-size: 6.5pt;
+      line-height: 1.2;
+    }
+    .chart-seat .seat-name-base {
+      font-size: 7pt;
+      line-height: 1.2;
+      font-weight: bold;
+    }
+    .chart-seat .seat-num-badge {
+      display: inline-block;
+      font-family: sans-serif;
+      font-size: 6pt;
+      color: #fff;
+      background: var(--ink-muted);
+      border-radius: 10px;
+      padding: 0 4px;
+      margin-bottom: 1px;
+    }
+    .chart-seat .seat-allergy {
+      font-size: 6pt;
+      font-family: sans-serif;
+      color: #7A5C10;
+      background: var(--allergy-bg);
+      border-radius: 3px;
+      padding: 0 3px;
+      display: block;
+      margin-top: 1px;
+    }
+    .gender-m { color: var(--male); }
+    .gender-f { color: var(--female); }
+
+    /* ── Forms 2 & 4: By table ─────────────────────────────────────────── */
+    .table-section {
+      margin-bottom: 1.4rem;
+      padding-top: 0.4in;
+      page-break-inside: avoid;
+      break-inside: avoid-page;
+    }
+    .table-section-header {
+      font-family: sans-serif;
+      font-size: 9pt;
+      font-weight: bold;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      color: var(--burgundy);
+      border-bottom: 1.5px solid var(--burgundy);
+      padding-bottom: .2rem;
+      margin-bottom: .5rem;
+    }
+    .seat-row {
+      display: flex;
+      align-items: baseline;
+      gap: .5rem;
+      padding: .2rem 0;
+      border-bottom: 1px dotted #ddd;
+      font-size: 10pt;
+    }
+    .seat-row:last-child { border-bottom: none; }
+    .seat-row .snum {
+      font-family: sans-serif;
+      font-size: 8pt;
+      color: var(--ink-muted);
+      width: 1.4rem;
+      flex-shrink: 0;
+    }
+    .seat-row .sname { flex: 1; }
+    .seat-row .sdiet {
+      font-size: 8pt;
+      font-family: sans-serif;
+      color: #7A5C10;
+    }
+
+    /* ── Form 3: Alphabetical ──────────────────────────────────────────── */
+    .alpha-grid {
+      columns: 2;
+      column-gap: 2rem;
+    }
+    .alpha-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      padding: .18rem 0;
+      border-bottom: 1px dotted #ddd;
+      font-size: 10pt;
+      break-inside: avoid;
+    }
+    .alpha-row .aname { flex: 1; }
+    .alpha-row .aloc {
+      font-family: sans-serif;
+      font-size: 8.5pt;
+      color: var(--ink-muted);
+      white-space: nowrap;
+      margin-left: .5rem;
+    }
+
+    /* ── Form 5: Name cards (Avery 5011) ──────────────────────────────── */
+    /*
+      Avery 5011: 3.5" × 2" tent cards, 4 per sheet (2×2)
+      Sheet: 8.5" × 11"
+      Top margin: 1.38", side margins ~.75"
+      Card: 3.5" W × 2" H, gap ~.13" H
+    */
+    @media print {
+      .namecard-page {
+        width: 8.5in;
+        height: 11in;
+        margin: 0;
+        /* 2 cols x 3 rows: card is 1-7/16" tall x 3-3/4" wide */
+        padding: 3.34in 0.5in 0 0.5in;
+        display: grid;
+        grid-template-columns: 3.75in 3.75in;
+        grid-template-rows: repeat(3, 1.4375in);
+        column-gap: 0;
+        row-gap: 0;
+        page-break-after: always;
+      }
+    }
+    @media screen {
+      .namecard-page {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: repeat(3, 90px);
+        gap: 3px;
+        max-width: 680px;
+        margin: 0 auto;
+      }
+    }
+    .namecard {
+      border: 1px solid #ccc;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: .3rem .5rem;
+      text-align: center;
+      page-break-inside: avoid;
+    }
+    .namecard .nc-order {
+      font-family: sans-serif;
+      font-size: 6pt;
+      color: var(--ink-muted);
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      margin-bottom: .15rem;
+    }
+    .namecard .nc-name {
+      font-size: 11pt;
+      color: var(--burgundy);
+      font-weight: normal;
+      line-height: 1.2;
+    }
+    .namecard .nc-loc {
+      font-family: sans-serif;
+      font-size: 7pt;
+      color: var(--ink-muted);
+      margin-top: .2rem;
+      letter-spacing: .04em;
+    }
+    .namecard .nc-order-name {
+      font-family: sans-serif;
+      font-size: 5.5pt;
+      color: var(--ink-muted);
+      margin-top: .3rem;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Screen toolbar ──────────────────────────────────────────────────────── -->
+<div class="screen-bar">
+  <h2>Print — {{ event.title }} &nbsp;·&nbsp; {{ event.event_date.strftime("%B %d, %Y") }}</h2>
+  <div class="actions">
+    <a href="{{ url_for('seating.seating_home', event_id=event.id) }}" class="btn btn-outline">← Back to seating</a>
+    <button class="btn btn-gold" onclick="printCurrent()">🖨 Print this view</button>
+  </div>
+</div>
+
+<!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
+<div class="tab-bar">
+  <button class="tab active" onclick="showTab('visual',this)">① Visual chart</button>
+  <button class="tab" onclick="showTab('by-table',this)">② By table</button>
+  <button class="tab" onclick="showTab('alpha',this)">③ Alphabetical</button>
+  <button class="tab" onclick="showTab('by-table-allergy',this)">④ Table + allergies</button>
+  <button class="tab" onclick="showTab('namebadges',this)">⑤ Name badges</button>
+  <a href="{{ url_for('seating.wine_tags', event_id=event.id) }}"
+     class="tab">⑥ Wine Tags</a>
+  <button class="tab" onclick="showTab('namecards',this)">⑦ Table Name Cards</button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FORM 1 — Visual seating chart with allergy flags
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="print-section active" id="sec-visual">
+<div class="page-preview">
+  <div class="print-header">
+    <div class="event-name">{{ event.title }}</div>
+    <div class="event-meta">{{ event.event_date.strftime("%A, %B %d, %Y") }}{% if event.venue_name %} &nbsp;·&nbsp; {{ event.venue_name }}{% endif %}</div>
+    <div class="report-title">Seating Chart</div>
+  </div>
+
+  <div class="chart-grid" id="chart-grid">
+    {% for t in tables_meta %}
+    {% set t_seats = by_table.get(t.id, []) %}
+    {% set n = t_seats|length %}
+    <div class="chart-table">
+      <div class="chart-table-label">{{ t.label }}</div>
+      <div class="chart-circle" data-seats="{{ n }}">
+        <div class="chart-table-oval"></div>
+        {% for seat in t_seats %}
+        <div class="chart-seat" data-index="{{ loop.index0 }}" data-total="{{ n }}">
+          <span class="seat-num-badge">{{ seat.seat_num }}</span>
+          <div class="seat-name {{ 'gender-m' if seat.gender == 'M' else 'gender-f' if seat.gender == 'F' else '' }}">
+            {% set parts = seat.name.split() %}
+            {% if parts|length > 1 %}
+              {{ parts[:-1]|join(' ') }}<br>{{ parts[-1] }}
+            {% else %}
+              {{ seat.name }}
+            {% endif %}
+          </div>
+          {% if seat.dietary %}
+          <span class="seat-allergy">⚠ {{ seat.dietary }}</span>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:1.5rem; font-family:sans-serif; font-size:8pt; color:var(--ink-muted); border-top:1px solid #ddd; padding-top:.25in;">
+    <span style="color:var(--male);">■</span> Male &nbsp;
+    <span style="color:var(--female);">■</span> Female &nbsp;
+    <span style="background:var(--allergy-bg);border:1px solid var(--allergy-bd);padding:0 4px;border-radius:3px;">⚠ allergy / dietary note</span>
+    &nbsp;·&nbsp; Printed {{ now }}
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FORM 2 — Seating by table (no allergies)
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="print-section" id="sec-by-table">
+<div class="page-preview">
+  <div class="print-header">
+    <div class="event-name">{{ event.title }}</div>
+    <div class="event-meta">{{ event.event_date.strftime("%A, %B %d, %Y") }}{% if event.venue_name %} &nbsp;·&nbsp; {{ event.venue_name }}{% endif %}</div>
+    <div class="report-title">Seating by Table</div>
+  </div>
+
+  {% for t in tables_meta %}
+  {% set t_seats = by_table.get(t.id, []) %}
+  {% if t_seats %}
+  <div class="table-section">
+    <div class="table-section-header">{{ t.label }} &nbsp;({{ t_seats|length }} seats)</div>
+    {% for seat in t_seats %}
+    <div class="seat-row">
+      <span class="snum">{{ seat.seat_num }}</span>
+      <span class="sname {{ 'gender-m' if seat.gender == 'M' else 'gender-f' if seat.gender == 'F' else '' }}">
+        {{ seat.name }}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  <div style="margin-top:1rem; font-family:sans-serif; font-size:8pt; color:var(--ink-muted); border-top:1px solid #ddd; padding-top:.25in;">
+    {{ seats|length }} guests total &nbsp;·&nbsp; Printed {{ now }}
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FORM 3 — Seating alphabetically by guest
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="print-section" id="sec-alpha">
+<div class="page-preview">
+  <div class="print-header">
+    <div class="event-name">{{ event.title }}</div>
+    <div class="event-meta">{{ event.event_date.strftime("%A, %B %d, %Y") }}{% if event.venue_name %} &nbsp;·&nbsp; {{ event.venue_name }}{% endif %}</div>
+    <div class="report-title">Seating List — Alphabetical</div>
+  </div>
+
+  <div class="alpha-grid">
+    {% for seat in alpha %}
+    <div class="alpha-row">
+      <span class="aname {{ 'gender-m' if seat.gender == 'M' else 'gender-f' if seat.gender == 'F' else '' }}">
+        {{ seat.name }}
+      </span>
+      <span class="aloc">{{ seat.table_label }}, Seat {{ seat.seat_num }}</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div style="margin-top:1rem; font-family:sans-serif; font-size:8pt; color:var(--ink-muted); border-top:1px solid #ddd; padding-top:.25in;">
+    {{ seats|length }} guests total &nbsp;·&nbsp; Printed {{ now }}
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FORM 4 — Seating by table WITH allergies
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="print-section" id="sec-by-table-allergy">
+<div class="page-preview">
+  <div class="print-header">
+    <div class="event-name">{{ event.title }}</div>
+    <div class="event-meta">{{ event.event_date.strftime("%A, %B %d, %Y") }}{% if event.venue_name %} &nbsp;·&nbsp; {{ event.venue_name }}{% endif %}</div>
+    <div class="report-title">Seating by Table — Dietary Notes</div>
+  </div>
+
+  {% for t in tables_meta %}
+  {% set t_seats = by_table.get(t.id, []) %}
+  {% if t_seats %}
+  <div class="table-section">
+    <div class="table-section-header">{{ t.label }} &nbsp;({{ t_seats|length }} seats)</div>
+    {% for seat in t_seats %}
+    <div class="seat-row" style="align-items:flex-start; flex-direction:column; padding:.3rem 0;">
+      <div style="display:flex; gap:.5rem; align-items:baseline; width:100%;">
+        <span class="snum">{{ seat.seat_num }}</span>
+        <span class="sname {{ 'gender-m' if seat.gender == 'M' else 'gender-f' if seat.gender == 'F' else '' }}">
+          {{ seat.name }}
+        </span>
+      </div>
+      {% if seat.dietary %}
+      <div style="margin-left:1.9rem;">
+        <span class="allergy-flag">⚠ {{ seat.dietary }}</span>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endfor %}
+
+  {% set allergy_count = seats | selectattr('dietary') | list | length %}
+  <div style="margin-top:1rem; font-family:sans-serif; font-size:8pt; color:var(--ink-muted); border-top:1px solid #ddd; padding-top:.25in;">
+    {{ seats|length }} guests · {{ allergy_count }} with dietary notes &nbsp;·&nbsp; Printed {{ now }}
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FORM — Guest name badges (Avery 74461) — PDF export
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="print-section" id="sec-namebadges">
+<div class="page-preview">
+  <div class="print-header" style="margin-bottom:1.5rem;">
+    <div class="event-name">{{ event.title }}</div>
+    <div class="report-title">Name Badges — Avery 74461</div>
+  </div>
+
+  <div style="text-align:center; padding:2rem 1rem;">
+    <div style="font-size:3rem; margin-bottom:1rem;">🖨</div>
+    <p style="font-family:sans-serif; font-size:.95rem; color:#3D2B1A; margin-bottom:.5rem;">
+      Downloads a <strong>PDF</strong> pre-formatted for <strong>Avery 74461</strong> clip-style badge inserts.
+    </p>
+    <p style="font-family:sans-serif; font-size:.82rem; color:#7A6650; margin-bottom:1.5rem;">
+      3-1&#x2F;2&quot; × 2-1&#x2F;4&quot; · 8 badges per sheet · 2 columns × 4 rows<br>
+      Logo upper-left, first name large &amp; bold above, last name below.
+      Sorted A&ndash;Z by last name. Guests only (plus-ones) &mdash; not members or partners.
+    </p>
+    <a href="{{ url_for('seating.export_namebadges', event_id=event.id) }}"
+       class="btn btn-gold"
+       style="font-size:.9rem; padding:.6rem 1.8rem; text-decoration:none; display:inline-block;">
+      ⬇ Download Name Badges (.pdf)
+    </a>
+    <p style="font-family:sans-serif; font-size:.75rem; color:#7A6650; margin-top:1rem;">
+      {{ guest_count }} badge(s) · {{ (guest_count / 8)|round(0,'ceil')|int }} sheet(s)
+    </p>
+  </div>
+</div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════════════
+     FORM 5 — Avery 5011 name cards — Word export
+     ══════════════════════════════════════════════════════════════════════════ -->
+<div class="print-section" id="sec-namecards">
+<div class="page-preview">
+  <div class="print-header" style="margin-bottom:1.5rem;">
+    <div class="event-name">{{ event.title }}</div>
+    <div class="report-title">Table Name Cards — Avery 5011</div>
+  </div>
+
+  <div style="text-align:center; padding:2rem 1rem;">
+    <div style="font-size:3rem; margin-bottom:1rem;">🖨</div>
+    <p style="font-family:sans-serif; font-size:.95rem; color:#3D2B1A; margin-bottom:.5rem;">
+      Downloads a <strong>Word (.docx)</strong> file pre-formatted for <strong>Avery 5011</strong> card stock.
+    </p>
+    <p style="font-family:sans-serif; font-size:.82rem; color:#7A6650; margin-bottom:1.5rem;">
+      1&#x2F;16&quot; × 3&#x2033; · 6 cards per sheet · 2 columns × 3 rows<br>
+      Cards are sorted A–Z by last name. Open in Word and print directly — no adjustments needed.
+    </p>
+    <a href="{{ url_for('seating.export_namecards', event_id=event.id) }}"
+       class="btn btn-gold"
+       style="font-size:.9rem; padding:.6rem 1.8rem; text-decoration:none; display:inline-block;">
+      ⬇ Download Table Name Cards (.docx)
+    </a>
+    <p style="font-family:sans-serif; font-size:.75rem; color:#7A6650; margin-top:1rem;">
+      {{ seats|length }} cards · {{ (seats|length / 6)|round(0,'ceil')|int }} sheet(s)
+    </p>
+  </div>
+</div>
+</div>
+
+<script>
+  // ── Position seats in circles ────────────────────────────────────────────
+  function layoutCircles() {
+    document.querySelectorAll('.chart-circle').forEach(circle => {
+      const seats = circle.querySelectorAll('.chart-seat');
+      const n = seats.length;
+      if (!n) return;
+
+      // Each seat label needs ~80px wide x 55px tall.
+      // For n seats evenly spaced, the arc between seats = 2*pi*R/n.
+      // We want arc >= 60px so labels don't crowd. R >= n*60 / (2*pi).
+      // Also cap R so labels stay inside the card column (~220px wide card).
+      // Max usable radius = (container/2) - 50px for label half-width.
+      const minR  = Math.max(55, (n * 62) / (2 * Math.PI));
+      const R     = Math.min(minR, 78);   // hard cap so names don't bleed out
+      const size  = Math.max(180, R * 2 + 100); // container: diameter + room for labels
+      circle.style.width  = size + 'px';
+      circle.style.height = size + 'px';
+
+      const cx = size / 2;
+      const cy = size / 2;
+
+      seats.forEach((seat, i) => {
+        const angle = (2 * Math.PI * i / n) - Math.PI / 2;
+        const x = cx + R * Math.cos(angle);
+        const y = cy + R * Math.sin(angle);
+        seat.style.left = x + 'px';
+        seat.style.top  = y + 'px';
+      });
+    });
+  }
+
+  layoutCircles();
+
+  let currentTab = 'visual';
+  const tabSectionMap = {
+    'visual':           'sec-visual',
+    'by-table':         'sec-by-table',
+    'alpha':            'sec-alpha',
+    'by-table-allergy': 'sec-by-table-allergy',
+    'namebadges':       'sec-namebadges',
+    'namecards':        'sec-namecards',
+  };
+
+  function showTab(tab, btn) {
+    currentTab = tab;
+    document.querySelectorAll('.print-section').forEach(s => s.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(tabSectionMap[tab]).classList.add('active');
+    btn.classList.add('active');
+  }
+
+  function printCurrent() {
+    // Mark the active section for @media print
+    document.querySelectorAll('.print-section').forEach(s => s.classList.remove('printing'));
+    document.getElementById(tabSectionMap[currentTab]).classList.add('printing');
+    window.print();
+  }
+</script>
+</body>
+</html>

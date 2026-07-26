@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Dashboard</h1>
+  <span class="text-muted text-sm">{{ current_user.display_name }}</span>
+</div>
+
+<!-- Stats row -->
+<div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1rem; margin-bottom:1.5rem;">
+  {% for label, value in [('Members of the Sous Commanderie', total_members), ('Members Honoraire', total_honoraire), ('Aspirants', total_aspirants), ('Partners', total_partners), ('Upcoming Events', upcoming|length)] %}
+  <div class="card" style="text-align:center; padding:1.4rem; border-top-color:var(--gold);">
+    <div style="font-size:2.2rem; color:var(--burgundy); font-weight:normal; font-family:Georgia,serif;">
+      {{ value }}
+    </div>
+    <div style="margin-top:.3rem; font-family:sans-serif; font-size:.7rem;
+                letter-spacing:.1em; text-transform:uppercase; color:var(--ink-muted);">
+      {{ label }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Upcoming events -->
+<div class="card">
+  <div class="card-title">Upcoming events</div>
+  {% if upcoming %}
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Event</th><th>Date</th><th>Venue</th><th>RSVPs</th><th>Capacity</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in upcoming %}
+        <tr>
+          <td><a href="{{ url_for('events.edit_event', event_id=event.id) }}" style="color:var(--burgundy);">{{ event.title }}</a></td>
+          <td>{{ event.event_date.strftime("%B %d, %Y") }}</td>
+          <td>{{ event.venue_name or '—' }}</td>
+          <td>{{ event.confirmed_count }}</td>
+          <td>{{ event.capacity or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="text-muted text-sm">No upcoming events. <a href="{{ url_for('events.create_event') }}" style="color:var(--gold);">Create one</a>.</p>
+  {% endif %}
+</div>
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+  <div class="card">
+    <div class="card-title">Quick actions</div>
+    <div style="display:flex; flex-direction:column; gap:.6rem;">
+      <a href="{{ url_for('members.add_member') }}" class="btn btn-primary">+ Add member</a>
+      <a href="{{ url_for('events.create_event') }}" class="btn btn-outline">+ Create event</a>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">Recent activity</div>
+    <p class="text-muted text-sm">Activity log coming in a future update.</p>
+  </div>
+</div>
+{% endblock %}

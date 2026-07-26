@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Wine Tags — {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Wine Tags</h1>
+  <div style="display:flex; gap:.6rem;">
+    <a href="{{ url_for('seating.print_seating', event_id=event.id) }}" class="btn btn-outline">&larr; Back to Print / Export</a>
+  </div>
+</div>
+
+<p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:1.2rem;">{{ event.title }} &nbsp;&middot;&nbsp; {{ event.event_date.strftime('%B %d, %Y') }}</p>
+
+{% if errors %}
+<div class="card" style="border-left:4px solid var(--burgundy); margin-bottom:1.2rem;">
+  <div style="font-weight:600; color:var(--burgundy); margin-bottom:.4rem;">Couldn't save the wine list:</div>
+  <ul style="margin:0; padding-left:1.2rem; color:var(--ink-muted); font-size:.9rem;">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:1.2rem;">
+  <div class="card-title">Upload wine list</div>
+  <p class="text-muted text-sm" style="margin-top:0;">
+    Every guest tastes the same wines in the same order, so this is one list for the whole event --
+    not per guest. Uploading a new file replaces the current list.
+  </p>
+  <form method="POST" enctype="multipart/form-data" style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+    <input type="file" name="csv_file" accept=".csv" required>
+    <button type="submit" class="btn btn-gold">Upload &amp; Save</button>
+    <a href="{{ url_for('seating.wine_tags_template', event_id=event.id) }}" class="btn btn-outline">Download CSV template</a>
+  </form>
+  <p class="text-muted text-sm" style="margin-top:.6rem; margin-bottom:0;">
+    Columns: <code>position</code>, <code>course</code>, <code>vintage</code> (optional), <code>domain</code>, <code>appellation</code>.
+    <strong>Position is the wine's order within its own course</strong> and resets back to 1 for each new
+    course -- e.g. the 1st and 2nd wines of course 1 are position 1 and 2, then the 1st wine of course 2
+    is position 1 again. That combination prints right on the tag as "position/course" (e.g. "2/1" =
+    2nd wine of course 1).
+  </p>
+</div>
+
+{% if wines %}
+<div class="card" style="margin-bottom:1.2rem;">
+  <div class="card-title">Current wine list ({{ wines|length }} wines)</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Tag #</th><th>Course</th><th>Vintage</th><th>Domain</th><th>Appellation</th></tr>
+    </thead>
+    <tbody>
+      {% for w in wines %}
+      <tr>
+        <td style="font-weight:700; color:var(--burgundy);">{{ w.position }}/{{ w.course }}</td>
+        <td>{{ w.course }}</td>
+        <td>{{ w.vintage or '--' }}</td>
+        <td>{{ w.domain }}</td>
+        <td>{{ w.appellation }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <div class="card-title">Print</div>
+  <p class="text-muted text-sm" style="margin-top:0;">
+    {{ event.confirmed_count }} confirmed guest{{ 's' if event.confirmed_count != 1 }} &times;
+    {{ wines|length }} wines = one tag per glass, grouped by wine so each stack stays together for the pourers.
+  </p>
+  <a href="{{ url_for('seating.print_wine_tags', event_id=event.id) }}" class="btn btn-gold">Print Wine Tags (PDF)</a>
+  <p class="text-muted text-sm" style="margin-top:.8rem; margin-bottom:0;">
+    <strong>Print at "Actual size / 100%"</strong> -- not "Fit to page" -- so the tags line up with the die-cut sheets.
+  </p>
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-sm" style="margin:0;">No wine list uploaded yet. Upload a CSV above to get started.</p>
+</div>
+{% endif %}
+{% endblock %}

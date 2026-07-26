@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Allergies — {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Allergies</h1>
+  <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">&larr; Back to event</a>
+</div>
+
+<p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:1.2rem;">
+  {{ event.title }} &nbsp;&middot;&nbsp; {{ event.event_date.strftime('%B %d, %Y') }}
+</p>
+
+<div class="card" style="margin-bottom:1.2rem;">
+  <div class="card-title">Allergies relevant tonight</div>
+  <p class="text-muted text-sm" style="margin-top:0;">
+    Pulled from currently confirmed guests. Everything starts on -- switch off whatever doesn't apply
+    to this event's menu. Active allergies get a dot on name tags, the seating chart, and the printed
+    allergy list.
+  </p>
+
+  {% if tag_rows %}
+  <div>
+    {% for row in tag_rows %}
+    <form method="POST" action="{{ url_for('events.toggle_allergy', event_id=event.id) }}"
+          style="display:flex; align-items:center; justify-content:space-between; padding:.6rem 0;
+                 {% if not loop.last %}border-bottom:1px solid var(--parchment-dk);{% endif %}">
+      <input type="hidden" name="tag_id" value="{{ row.tag.id }}">
+      <span style="{% if not row.active %}color:var(--ink-muted);{% endif %}">{{ row.tag.label }}</span>
+      <button type="submit"
+              aria-label="Toggle {{ row.tag.label }} {{ 'off' if row.active else 'on' }}"
+              style="border:none; cursor:pointer; padding:0; width:38px; height:22px; border-radius:11px;
+                     position:relative; background:{{ 'var(--success)' if row.active else 'transparent' }};
+                     {% if not row.active %}border:1px solid var(--ink-muted);{% endif %}">
+        <span style="position:absolute; top:2px; width:18px; height:18px; border-radius:50%;
+                     background:{{ '#fff' if row.active else 'var(--ink-muted)' }};
+                     {{ 'right:2px;' if row.active else 'left:1px;' }}"></span>
+      </button>
+    </form>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-muted text-sm" style="margin-bottom:0;">No allergy tags among confirmed guests for this event.</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-title">Guest list</div>
+  <p class="text-muted text-sm" style="margin-top:0;">
+    A hollow dot means that guest has an allergy currently switched off above. Hover it to see which one.
+  </p>
+
+  {% if guests %}
+  <div>
+    {% for g in guests %}
+    <div style="display:flex; align-items:center; justify-content:space-between; padding:.5rem 0;
+                {% if not loop.last %}border-bottom:1px solid var(--parchment-dk);{% endif %}">
+      <span style="font-size:.9rem;">{{ g.name }}</span>
+      <span style="display:flex; gap:5px;">
+        {% for t in g.tags %}
+        <span title="{{ t.tag.label }} — {{ 'active' if t.active else 'inactive for this event' }}"
+              style="width:10px; height:10px; border-radius:50%; flex-shrink:0;
+                     {% if t.active %}
+                       background:var(--burgundy);
+                     {% else %}
+                       background:transparent; border:1px solid var(--ink-muted);
+                     {% endif %}"></span>
+        {% endfor %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-muted text-sm" style="margin-bottom:0;">No confirmed guests have an allergy tag on file yet.</p>
+  {% endif %}
+</div>
+{% endblock %}

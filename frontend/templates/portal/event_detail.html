@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{{ event.title }}</h1>
+  <a href="{{ url_for('portal.home') }}" class="btn btn-outline">← All events</a>
+</div>
+
+<div style="display:grid; grid-template-columns:2fr 1fr; gap:1.5rem;">
+
+  <!-- Left: event info -->
+  <div>
+    <div class="card">
+      <!-- Date / venue / dress code -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin-bottom:1rem;">
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Date &amp; time</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">
+            {{ event.event_date.strftime("%A, %B %d, %Y") }}<br>
+            {% if event.event_date.strftime("%H:%M") != "00:00" %}
+              {{ event.event_date.strftime("%I:%M %p") }}
+            {% endif %}
+          </div>
+        </div>
+        {% if event.venue_name %}
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Venue</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">
+            {{ event.venue_name }}<br>
+            {% if event.venue_address %}<span class="text-muted text-sm">{{ event.venue_address }}</span>{% endif %}
+          </div>
+        </div>
+        {% endif %}
+        {% if event.dress_code %}
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Dress code</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">{{ event.dress_code }}</div>
+        </div>
+        {% endif %}
+        {% if event.price_per_person %}
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Price per person</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">${{ "%.2f"|format(event.price_per_person|float) }}</div>
+        </div>
+        {% endif %}
+        {% if event.rsvp_deadline %}
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Reservations close</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">
+            {{ event.rsvp_deadline.strftime("%B %d, %Y at %I:%M %p") }}
+          </div>
+        </div>
+        {% endif %}
+      </div>
+
+      {% if event.description %}
+        <hr class="gold-rule">
+        <div style="font-size:.95rem; line-height:1.7; color:var(--ink-mid);">{{ event.description|safe }}</div>
+      {% endif %}
+
+      {% if event.menu_notes %}
+        <hr class="gold-rule">
+        <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                    color:var(--burgundy); font-family:sans-serif; margin-bottom:.4rem;">Menu</div>
+        <div class="text-sm" style="color:var(--ink-mid);">{{ event.menu_notes|safe }}</div>
+      {% endif %}
+    </div>
+
+    <!-- Guest list -->
+    <div class="card">
+      <div class="card-title">
+        Attending
+        <span style="font-weight:normal; color:var(--ink-muted); font-size:.85rem;">
+          ({{ event.confirmed_count }} seat{{ 's' if event.confirmed_count != 1 }}
+          {% if event.capacity %} of {{ event.capacity }}{% endif %})
+        </span>
+      </div>
+      {% if confirmed_rsvps %}
+        {% for rsvp in confirmed_rsvps %}
+        <div style="padding:.5rem 0; border-bottom:1px solid var(--parchment-dk);">
+          <span style="color:var(--ink); font-weight:500;">{{ rsvp.person.display_name }}</span>
+          {% if rsvp.guests %}
+            {% for g in rsvp.guests %}
+              <span class="text-muted text-sm" style="margin-left:.5rem;">+ {{ g.display_name }}</span>
+            {% endfor %}
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted text-sm">No one has RSVP'd yet. Be the first!</p>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right: RSVP status -->
+  <div>
+    <div class="card" style="border-top-color:var(--gold); position:sticky; top:1rem;">
+      <div class="card-title">Your reservation</div>
+
+      {% set rsvp_closed = event.rsvp_deadline and event.rsvp_deadline < now %}
+      {% if rsvp_closed and not (my_rsvp and my_rsvp.status == 'confirmed') %}
+        <div style="text-align:center; padding:.8rem 0;">
+          <div style="font-size:1.3rem; color:var(--ink-muted);">🔒</div>
+          <div style="font-family:sans-serif; font-size:.82rem; color:var(--ink-muted);
+                      margin-top:.3rem;">Reservations closed</div>
+          <div class="text-muted text-sm" style="margin-top:.2rem;">
+            {{ event.rsvp_deadline.strftime("%B %d at %I:%M %p") }}
+          </div>
+        </div>
+
+      {% elif my_rsvp and my_rsvp.status == 'confirmed' %}
+        <div style="text-align:center; padding:.5rem 0 1rem;">
+          <div style="font-size:2rem; color:var(--success);">✓</div>
+          <div style="color:var(--success); font-family:sans-serif; font-size:.85rem;
+                      letter-spacing:.04em; margin-top:.2rem;">Confirmed</div>
+          {% if my_rsvp.guests %}
+            <div class="text-muted text-sm" style="margin-top:.5rem;">
+              + {{ my_rsvp.guests|length }} guest{{ 's' if my_rsvp.guests|length != 1 }}
+            </div>
+          {% endif %}
+        </div>
+        <a href="{{ url_for('portal.rsvp', event_id=event.id) }}"
+           class="btn btn-outline" style="width:100%; text-align:center; margin-bottom:.5rem;">
+          Edit reservation
+        </a>
+        {% if not rsvp_closed %}
+        <form method="POST" action="{{ url_for('portal.rsvp', event_id=event.id) }}"
+              onsubmit="return confirm('Cancel your reservation for {{ event.title }}?')">
+          <input type="hidden" name="action" value="decline">
+          <button class="btn btn-danger btn-sm" style="width:100%;">Cancel reservation</button>
+        </form>
+        {% else %}
+        <p class="text-muted text-sm" style="text-align:center; margin-top:.5rem;">
+          Reservations are closed — contact your Grand Sénéchal to make changes.
+        </p>
+        {% endif %}
+
+      {% elif my_rsvp and my_rsvp.status == 'promoted' %}
+        <div style="text-align:center; padding:.5rem 0 1rem;">
+          <div style="font-size:1.5rem; color:var(--gold);">🎉</div>
+          <div style="color:var(--gold); font-family:sans-serif; font-size:.85rem;
+                      letter-spacing:.04em; margin-top:.3rem;">
+            A seat is being held for you
+          </div>
+          <div class="text-muted text-sm" style="margin-top:.4rem;">
+            Please confirm by {{ my_rsvp.promotion_expires_at.strftime("%B %d at %I:%M %p") }}
+            or the seat will pass to the next person on the waitlist.
+          </div>
+        </div>
+        <a href="{{ url_for('portal.confirm_promotion', token=my_rsvp.promotion_token) }}"
+           class="btn btn-gold" style="width:100%; text-align:center;">
+          Confirm my seat
+        </a>
+
+      {% elif my_rsvp and my_rsvp.status == 'waitlist' %}
+        <div style="text-align:center; padding:.5rem 0 1rem;">
+          <div style="font-size:1.5rem; color:var(--gold);">⏳</div>
+          <div style="color:var(--gold); font-family:sans-serif; font-size:.85rem;
+                      letter-spacing:.04em; margin-top:.3rem;">
+            Waitlist{% if waitlist_pos %} — position {{ waitlist_pos }}{% endif %}
+          </div>
+          <div class="text-muted text-sm" style="margin-top:.4rem;">
+            We'll notify you if a spot opens.
+          </div>
+        </div>
+        <form method="POST" action="{{ url_for('portal.rsvp', event_id=event.id) }}"
+              onsubmit="return confirm('Remove yourself from the waitlist?')">
+          <input type="hidden" name="action" value="decline">
+          <button class="btn btn-outline btn-sm" style="width:100%;">Leave waitlist</button>
+        </form>
+
+      {% elif my_rsvp and my_rsvp.status in ('declined', 'expired') %}
+        <p class="text-muted text-sm" style="text-align:center; margin-bottom:1rem;">
+          {% if my_rsvp.status == 'expired' %}
+            Your waitlist offer window passed, so the seat moved on to the next person in line.
+          {% else %}
+            You previously declined this event.
+          {% endif %}
+        </p>
+        <a href="{{ url_for('portal.rsvp', event_id=event.id) }}"
+           class="btn btn-primary" style="width:100%; text-align:center;">
+          RSVP now
+        </a>
+
+      {% else %}
+        {% if event.is_full %}
+          <p class="text-muted text-sm" style="margin-bottom:1rem;">
+            This event is full. You can join the waitlist and we'll notify you if a spot opens.
+          </p>
+          <a href="{{ url_for('portal.rsvp', event_id=event.id) }}"
+             class="btn btn-gold" style="width:100%; text-align:center;">
+            Join waitlist
+          </a>
+        {% else %}
+          <p class="text-muted text-sm" style="margin-bottom:1rem;">
+            {% if event.capacity %}
+              {{ event.capacity - event.confirmed_count }} spot{{ 's' if (event.capacity - event.confirmed_count) != 1 }} remaining.
+            {% endif %}
+          </p>
+          <a href="{{ url_for('portal.rsvp', event_id=event.id) }}"
+             class="btn btn-primary" style="width:100%; text-align:center;">
+            RSVP now
+          </a>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

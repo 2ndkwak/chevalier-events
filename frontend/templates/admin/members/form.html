@@ -1,0 +1,393 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if person else 'Add Member' }} — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{{ 'Edit — ' + person.display_name if person else 'Add member or partner' }}</h1>
+  <a href="{{ url_for('members.list_members') }}" class="btn btn-outline">← Back to list</a>
+</div>
+
+{# ── Core details form ─────────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="card-title">Personal details</div>
+  <form method="POST"
+        action="{{ url_for('members.edit_member', person_id=person.id) if person else url_for('members.add_member') }}">
+
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="person_type">Record type</label>
+        <select name="person_type" id="person_type">
+          <option value="member"     {% if not person or person.person_type=='member'     %}selected{% endif %}>Chevalier</option>
+          <option value="honoraire"  {% if person and person.person_type=='honoraire'  %}selected{% endif %}>Membre Honoraire</option>
+          <option value="aspirant"   {% if person and person.person_type=='aspirant'   %}selected{% endif %}>Aspirant</option>
+          <option value="partner"    {% if person and person.person_type=='partner'    %}selected{% endif %}>Non-member partner</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" placeholder="Dr., Count, Sir…"
+               value="{{ person.title or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="first_name">First name *</label>
+        <input type="text" id="first_name" name="first_name" required
+               value="{{ person.first_name if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="last_name">Last name *</label>
+        <input type="text" id="last_name" name="last_name" required
+               value="{{ person.last_name if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="gender">Gender</label>
+        <select name="gender" id="gender">
+          <option value="">— Not specified —</option>
+          <option value="M" {% if person and person.gender=='M' %}selected{% endif %}>Male</option>
+          <option value="F" {% if person and person.gender=='F' %}selected{% endif %}>Female</option>
+          <option value="Other" {% if person and person.gender=='Other' %}selected{% endif %}>Other</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="suffix">Suffix</label>
+        <input type="text" id="suffix" name="suffix" placeholder="Jr., III…"
+               value="{{ person.suffix or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="member_since">Member since</label>
+        <input type="date" id="member_since" name="member_since"
+               value="{{ person.member_since.isoformat() if person and person.member_since else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="allergy_tags">Allergy / dietary tags</label>
+        <input type="text" id="allergy_tags" name="allergy_tags" list="allergy_tag_options"
+               placeholder="e.g. Gluten intolerant, Nut allergy — separate multiple with commas"
+               value="{{ person.dietary_tags|map(attribute='label')|join(', ') if person else '' }}">
+        <datalist id="allergy_tag_options">
+          {% for t in all_tags %}<option value="{{ t.label }}">{% endfor %}
+        </datalist>
+        <p class="text-muted text-sm" style="margin:.3rem 0 0;">
+          These drive the per-event allergy toggle. Typing a new label adds it to the shared list for next time.
+        </p>
+      </div>
+    </div>
+
+    <hr class="divider">
+
+    {# Officer #}
+    <div class="checkbox-row" style="margin-bottom:.8rem;">
+      <input type="checkbox" id="is_officer" name="is_officer"
+             {% if person and person.is_officer %}checked{% endif %}>
+      <label for="is_officer">This person is currently an officer of the order</label>
+    </div>
+    <div class="form-group" style="max-width:320px; margin-bottom:1rem;" id="officer-role-group">
+      <label for="officer_role">Officer role / title</label>
+      <input type="text" id="officer_role" name="officer_role"
+             placeholder="Grand Sénéchal, Chancelier…"
+             value="{{ person.officer_role or '' if person else '' }}">
+    </div>
+
+    {# Admin toggle — only show when editing existing record #}
+    {% if person %}
+    <div class="checkbox-row" style="margin-bottom:.8rem; padding:.7rem 1rem;
+         background:{% if person.is_admin %}#FFF3CD{% else %}var(--parchment){% endif %};
+         border-radius:var(--radius); border:1px solid
+         {% if person.is_admin %}var(--gold){% else %}var(--parchment-md){% endif %};">
+      <input type="checkbox" id="is_admin" name="is_admin"
+             {% if person.is_admin %}checked{% endif %}>
+      <label for="is_admin" style="font-weight:600;">
+        Administrator — can access the full admin interface
+      </label>
+    </div>
+    {% endif %}
+
+    <hr class="divider">
+
+    {# Contact #}
+    <p class="card-title">Contact information</p>
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email"
+               value="{{ person.email or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="phone">Cell phone</label>
+        <input type="tel" id="phone" name="phone"
+               value="{{ person.phone or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="home_phone_1">Home phone (address 1)</label>
+        <input type="tel" id="home_phone_1" name="home_phone_1"
+               value="{{ person.home_phone_1 or '' if person else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="address_line1">Address 1</label>
+        <input type="text" id="address_line1" name="address_line1"
+               placeholder="Street address"
+               value="{{ person.address_line1 or '' if person else '' }}">
+      </div>
+      <div class="form-group full">
+        <input type="text" name="address_line2"
+               placeholder="Apt, suite, etc. (optional)"
+               value="{{ person.address_line2 or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="city">City</label>
+        <input type="text" id="city" name="city"
+               value="{{ person.city or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="province_state">Province / state</label>
+        <input type="text" id="province_state" name="province_state"
+               value="{{ person.province_state or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="postal_code">Postal code</label>
+        <input type="text" id="postal_code" name="postal_code"
+               value="{{ person.postal_code or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="country">Country</label>
+        <input type="text" id="country" name="country"
+               value="{{ person.country or '' if person else '' }}">
+      </div>
+
+      <div class="form-group full">
+        <label for="address2_label">Second address label <span class="text-muted">(optional — e.g. Winter home)</span></label>
+        <input type="text" id="address2_label" name="address2_label"
+               value="{{ person.address2_label or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="home_phone_2">Home phone (address 2)</label>
+        <input type="tel" id="home_phone_2" name="home_phone_2"
+               value="{{ person.home_phone_2 or '' if person else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="address2_line1">Address 2</label>
+        <input type="text" id="address2_line1" name="address2_line1"
+               placeholder="Street address"
+               value="{{ person.address2_line1 or '' if person else '' }}">
+      </div>
+      <div class="form-group full">
+        <input type="text" name="address2_line2"
+               placeholder="Apt, suite, etc. (optional)"
+               value="{{ person.address2_line2 or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="city2">City</label>
+        <input type="text" id="city2" name="city2"
+               value="{{ person.city2 or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="province_state2">Province / state</label>
+        <input type="text" id="province_state2" name="province_state2"
+               value="{{ person.province_state2 or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="postal_code2">Postal code</label>
+        <input type="text" id="postal_code2" name="postal_code2"
+               value="{{ person.postal_code2 or '' if person else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="country2">Country</label>
+        <input type="text" id="country2" name="country2"
+               value="{{ person.country2 or '' if person else '' }}">
+      </div>
+      <div class="form-group full">
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes">{{ person.notes or '' if person else '' }}</textarea>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div class="flex gap-1">
+      <button type="submit" class="btn btn-primary">
+        {{ 'Save changes' if person else 'Add to database' }}
+      </button>
+      <a href="{{ url_for('members.list_members') }}" class="btn btn-outline">Cancel</a>
+    </div>
+  </form>
+</div>
+
+{# ── Partner section (only shown when editing an existing record) ────────── #}
+{% if person %}
+<div class="card">
+  <div class="card-title">Partner / spouse</div>
+
+  {% if person.partner %}
+    <div class="flex align-center gap-2" style="margin-bottom:1rem;">
+      <div>
+        <a href="{{ url_for('members.edit_member', person_id=person.partner.id) }}"
+           style="color:var(--navy); font-weight:500;">
+          {{ person.partner.display_name }}
+        </a>
+        <span class="badge badge-muted" style="margin-left:.4rem;">
+          {{ person.partner.person_type }}
+        </span>
+        {% if person.partner.is_officer %}
+          <span class="badge badge-gold" style="margin-left:.2rem;">
+            {{ person.partner.officer_role or 'Officer' }}
+          </span>
+        {% endif %}
+      </div>
+    </div>
+    <form method="POST" action="{{ url_for('members.link_partner', person_id=person.id) }}"
+          style="display:inline;">
+      <input type="hidden" name="partner_id" value="">
+      <button type="submit" class="btn btn-outline btn-sm"
+              onclick="return confirm('Remove the partner link?')">
+        Remove link
+      </button>
+    </form>
+    <a href="{{ url_for('members.edit_member', person_id=person.partner.id) }}"
+       class="btn btn-outline btn-sm" style="margin-left:.4rem;">
+      Edit partner record
+    </a>
+
+  {% else %}
+    <p class="text-muted text-sm" style="margin-bottom:1rem;">
+      No partner linked. Link an existing record, or create a new non-member partner below.
+    </p>
+
+    {# Link existing #}
+    <form method="POST" action="{{ url_for('members.link_partner', person_id=person.id) }}"
+          style="display:flex; gap:.6rem; margin-bottom:1rem; flex-wrap:wrap;">
+      <select name="partner_id" style="max-width:280px;">
+        <option value="">— Select existing person —</option>
+        {% for p in all_persons %}
+          {% if p.id != person.id and not p.partner_id %}
+            <option value="{{ p.id }}">{{ p.display_name }} ({{ p.person_type }})</option>
+          {% endif %}
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn btn-outline">Link as partner</button>
+    </form>
+
+    <hr class="divider" style="margin:1rem 0;">
+    <p class="card-title" style="font-size:.85rem; margin-bottom:.8rem;">
+      Or create a new non-member partner
+    </p>
+    <form method="POST" action="{{ url_for('members.create_partner', person_id=person.id) }}">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="p_title">Title</label>
+          <input type="text" id="p_title" name="title" placeholder="Dr., Countess…">
+        </div>
+        <div class="form-group">
+          <label for="p_first">First name *</label>
+          <input type="text" id="p_first" name="first_name" required>
+        </div>
+        <div class="form-group">
+          <label for="p_last">Last name *</label>
+          <input type="text" id="p_last" name="last_name" required>
+        </div>
+        <div class="form-group">
+          <label for="p_suffix">Suffix</label>
+          <input type="text" id="p_suffix" name="suffix" placeholder="Jr.…">
+        </div>
+        <div class="form-group">
+          <label for="p_email">Email</label>
+          <input type="email" id="p_email" name="email">
+        </div>
+        <div class="form-group full">
+          <label for="p_allergy_tags">Allergy / dietary tags</label>
+          <input type="text" id="p_allergy_tags" name="allergy_tags" list="allergy_tag_options"
+                 placeholder="e.g. Gluten intolerant, Nut allergy — separate multiple with commas">
+        </div>
+      </div>
+      <input type="hidden" name="person_type" value="partner">
+      <button type="submit" class="btn btn-outline mt-2">Create &amp; link partner</button>
+    </form>
+  {% endif %}
+</div>
+
+{# ── Portal login section ──────────────────────────────────────────────────── #}
+<div class="card">
+  <div class="card-title">Portal login</div>
+  {% if person.can_login %}
+    <p class="text-sm" style="margin-bottom:1rem;">
+      <span class="badge badge-success">Active</span>
+      &nbsp;{{ person.email }} can sign in to the member portal.
+    </p>
+    <div class="flex gap-1" style="flex-wrap:wrap;">
+      <form method="POST" action="{{ url_for('members.reset_password', person_id=person.id) }}">
+        <button type="submit" class="btn btn-outline btn-sm">Reset password</button>
+      </form>
+      <form method="POST" action="{{ url_for('members.send_invite', person_id=person.id) }}">
+        <button type="submit" class="btn btn-outline btn-sm">Re-send invitation email</button>
+      </form>
+      <form method="POST" action="{{ url_for('members.disable_login', person_id=person.id) }}"
+            onsubmit="return confirm('Disable login for {{ person.display_name }}?')">
+        <button type="submit" class="btn btn-danger btn-sm">Disable login</button>
+      </form>
+    </div>
+  {% else %}
+    <p class="text-muted text-sm" style="margin-bottom:1rem;">
+      This person does not have portal access.
+      {% if not person.email %}
+        Add an email address above before enabling login.
+      {% endif %}
+    </p>
+    {% if person.email %}
+    <div class="flex gap-1" style="flex-wrap:wrap; margin-bottom:.8rem;">
+      {# Option A: send invitation email — member sets their own password #}
+      <form method="POST" action="{{ url_for('members.send_invite', person_id=person.id) }}">
+        <button type="submit" class="btn btn-primary btn-sm">
+          ✉ Send invitation email
+        </button>
+      </form>
+      {# Option B: set a password manually #}
+      <details style="display:inline-block;">
+        <summary class="btn btn-outline btn-sm" style="cursor:pointer; list-style:none;">
+          Set password manually
+        </summary>
+        <div style="margin-top:.6rem; padding:.8rem; background:var(--parchment);
+                    border-radius:var(--radius); border:1px solid var(--parchment-md);">
+          <form method="POST" action="{{ url_for('members.enable_login', person_id=person.id) }}">
+            <div class="form-group" style="max-width:280px; margin-bottom:.6rem;">
+              <label for="login_password">Initial password (leave blank to auto-generate)</label>
+              <input type="text" id="login_password" name="password" placeholder="Auto-generate">
+            </div>
+            <button type="submit" class="btn btn-outline btn-sm">Enable with this password</button>
+          </form>
+        </div>
+      </details>
+    </div>
+    {% if person.invite_sent_at %}
+    <p class="text-muted text-sm">
+      Invitation sent {{ person.invite_sent_at.strftime("%B %d at %I:%M %p") }} —
+      awaiting activation.
+    </p>
+    {% endif %}
+    {% endif %}
+  {% endif %}
+</div>
+
+{# ── Danger zone ───────────────────────────────────────────────────────────── #}
+<div class="card" style="border-color:#F5D5D9;">
+  <div class="card-title" style="color:var(--danger);">Remove record</div>
+  <p class="text-muted text-sm" style="margin-bottom:1rem;">
+    Permanently removes {{ person.display_name }} from the database.
+    This cannot be undone. Past RSVP records will be affected.
+  </p>
+  <form method="POST"
+        action="{{ url_for('members.delete_member', person_id=person.id) }}"
+        onsubmit="return confirm('Permanently remove {{ person.display_name }}? This cannot be undone.')">
+    <button type="submit" class="btn btn-danger btn-sm">Remove {{ person.display_name }}</button>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const officerCheck = document.getElementById('is_officer');
+  const roleGroup    = document.getElementById('officer-role-group');
+  function toggleRole() {
+    roleGroup.style.display = officerCheck.checked ? 'flex' : 'none';
+  }
+  officerCheck.addEventListener('change', toggleRole);
+  toggleRole();
+</script>
+{% endblock %}

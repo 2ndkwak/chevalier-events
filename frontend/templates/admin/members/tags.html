@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Manage Dietary Tags{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Manage Dietary Tags</h1>
+  <a href="{{ url_for('members.list_members') }}" class="btn btn-outline">&larr; Back to Members</a>
+</div>
+
+<p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:1.2rem;">
+  Members and admins can type any label into the "Allergy / dietary tags" field, so near-duplicates
+  and misspellings can build up over time (e.g. "Scallops" and "No Scallops" ending up as two
+  separate tags). Use this screen to fix that.
+</p>
+
+<div class="card" style="margin-bottom:1.2rem;">
+  <div class="card-title">How this works</div>
+  <ul class="text-sm text-muted" style="margin:0; padding-left:1.2rem;">
+    <li><strong>Rename</strong> fixes a typo or wording in place -- everyone who had the old label now has the corrected one, instantly, everywhere it's used.</li>
+    <li><strong>Merge into&hellip;</strong> folds a duplicate tag into another one you pick -- everyone who had the duplicate now has the target tag instead, and the duplicate is removed.</li>
+    <li><strong>Delete</strong> only works on a tag nobody currently has -- otherwise, merge it into the right tag first.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <div class="card-title">All tags ({{ tags|length }})</div>
+
+  {% if tags %}
+  <table class="data-table">
+    <thead>
+      <tr><th>Label</th><th>In use by</th><th>Rename</th><th>Merge into&hellip;</th><th></th></tr>
+    </thead>
+    <tbody>
+      {% for tag in tags %}
+      <tr>
+        <td style="font-weight:600;">{{ tag.label }}</td>
+        <td class="text-muted text-sm">
+          {{ tag_usage[tag.id] }} record{{ '' if tag_usage[tag.id] == 1 else 's' }}
+        </td>
+        <td>
+          <form method="POST" action="{{ url_for('members.rename_tag', tag_id=tag.id) }}"
+                style="display:flex; gap:.4rem; align-items:center;">
+            <input type="text" name="label" value="{{ tag.label }}" required
+                   style="width:9rem;">
+            <button type="submit" class="btn btn-outline btn-sm">Rename</button>
+          </form>
+        </td>
+        <td>
+          {% if tags|length > 1 %}
+          <form method="POST" action="{{ url_for('members.merge_tag', tag_id=tag.id) }}"
+                onsubmit="return confirm('Merge \'{{ tag.label }}\' into the selected tag? This can\'t be undone.');"
+                style="display:flex; gap:.4rem; align-items:center;">
+            <select name="target_id" required style="width:9rem;">
+              <option value="">Choose a tag&hellip;</option>
+              {% for other in tags if other.id != tag.id %}
+              <option value="{{ other.id }}">{{ other.label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="btn btn-gold btn-sm">Merge</button>
+          </form>
+          {% else %}
+            <span class="text-muted text-sm">&mdash;</span>
+          {% endif %}
+        </td>
+        <td>
+          <form method="POST" action="{{ url_for('members.delete_tag', tag_id=tag.id) }}"
+                onsubmit="return confirm('Delete the tag \'{{ tag.label }}\'?');">
+            <button type="submit" class="btn btn-danger btn-sm"
+                    {% if tag_usage[tag.id] > 0 %}disabled title="Still in use -- merge it into another tag first"{% endif %}>
+              Delete
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-muted text-sm">No dietary tags have been created yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
