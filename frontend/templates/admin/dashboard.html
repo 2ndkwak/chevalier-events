@@ -58,8 +58,68 @@
     </div>
   </div>
   <div class="card">
-    <div class="card-title">Recent activity</div>
-    <p class="text-muted text-sm">Activity log coming in a future update.</p>
+    <div class="card-title">Pending &amp; Recent Changes</div>
+
+    {% if pending_offer_items %}
+    <div style="margin-bottom:.9rem;">
+      <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-muted); margin-bottom:.3rem;">Pending waitlist offers</div>
+      {% for item in pending_offer_items %}
+      <div class="text-sm" style="margin-bottom:.25rem;">
+        {{ item.rsvp.person.display_name }} &mdash; {{ item.rsvp.event.title }}
+        {% if item.hours_left is not none %}
+        <span class="text-muted">(expires in {{ item.hours_left }}h)</span>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if outstanding_invites %}
+    <div style="margin-bottom:.9rem;">
+      <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-muted); margin-bottom:.3rem;">Outstanding invites</div>
+      {% for p in outstanding_invites %}
+      <div class="text-sm" style="margin-bottom:.25rem;">
+        {{ p.display_name }} <span class="text-muted">(sent {{ p.invite_sent_at.strftime("%b %d") }})</span>
+      </div>
+      {% endfor %}
+      {% if outstanding_invites_more > 0 %}
+      <div class="text-muted text-sm" style="margin-top:.15rem;">
+        +{{ outstanding_invites_more }} more outstanding
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    {% if roster_changes %}
+    <div style="margin-bottom:.9rem;">
+      <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-muted); margin-bottom:.3rem;">Recent roster changes</div>
+      {% for item in roster_changes %}
+      <div class="text-sm" style="margin-bottom:.25rem;">
+        {% if item.kind == "added" %}
+        {{ item.person.display_name }} added as {{ item.person.person_type }}
+        {% else %}
+        {{ item.person.display_name }}'s membership type changed to {{ item.person.person_type }}
+        {% endif %}
+        <span class="text-muted">({{ item.when.strftime("%b %d") }})</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if dietary_edits %}
+    <div>
+      <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-muted); margin-bottom:.3rem;">Dietary tag edits (upcoming attendees)</div>
+      {% for p in dietary_edits %}
+      <div class="text-sm" style="margin-bottom:.25rem;">
+        {{ p.display_name }} <span class="text-muted">({{ p.dietary_tags_updated_at.strftime("%b %d") }})</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% if not pending_offer_items and not outstanding_invites and not roster_changes and not dietary_edits %}
+    <p class="text-muted text-sm">Nothing pending right now.</p>
+    {% endif %}
   </div>
 </div>
 {% endblock %}
