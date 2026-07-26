@@ -80,6 +80,12 @@ class Person(UserMixin, db.Model):
     updated_at     = db.Column(db.DateTime, default=datetime.utcnow,
                                onupdate=datetime.utcnow)
 
+    # Activity-log support: stamped explicitly (not via onupdate) so these
+    # only change when the specific thing they track actually changes --
+    # unlike updated_at above, which fires on any edit at all.
+    person_type_updated_at    = db.Column(db.DateTime, nullable=True)
+    dietary_tags_updated_at   = db.Column(db.DateTime, nullable=True)
+
     # -- helpers --
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -156,6 +162,8 @@ class DietaryTag(db.Model):
             if tag:
                 tags.append(tag)
         owner.dietary_tags = tags
+        if hasattr(owner, "dietary_tags_updated_at"):
+            owner.dietary_tags_updated_at = datetime.utcnow()
 
     def __repr__(self):
         return f"<DietaryTag {self.id} '{self.label}'>"

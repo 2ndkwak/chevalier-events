@@ -309,7 +309,11 @@ def delete_tag(tag_id):
 
 def _person_from_form(person, form):
     """Populate a Person from a form submission."""
+    old_person_type = person.person_type
     person.person_type    = form.get("person_type", person.person_type or "member")
+    if old_person_type and old_person_type != person.person_type:
+        from datetime import datetime
+        person.person_type_updated_at = datetime.utcnow()
     person.title          = form.get("title", "").strip() or None
     person.first_name     = form.get("first_name", "").strip()
     person.last_name      = form.get("last_name", "").strip()
