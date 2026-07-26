@@ -6,7 +6,7 @@
   <h1>Members &amp; Partners</h1>
   <div style="display:flex; gap:.6rem;">
     <a href="{{ url_for('import_members.upload') }}" class="btn btn-outline">↑ Import CSV</a>
-    <a href="{{ url_for('members.manage_tags') }}" class="btn btn-outline">🏷 Manage Tags</a>
+    <a href="{{ url_for('members.manage_tags') }}" class="btn btn-outline">🏷 Manage Dietary Restrictions</a>
     <form method="POST" action="{{ url_for('members.bulk_invite') }}"
           onsubmit="return confirm('Send invitation emails to all members with an email address and no portal access yet?')">
       <button type="submit" class="btn btn-outline">✉ Bulk invite</button>
