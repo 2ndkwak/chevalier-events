@@ -109,6 +109,7 @@ def _auto_migrate():
         ("events", "chef_name",       "VARCHAR(200)"),
         ("events", "paypal_link",     "VARCHAR(500)"),
         ("events", "menu_finalized",  "BOOLEAN DEFAULT 0"),
+        ("events", "paypal_price_per_person", "NUMERIC(10,2)"),
     ]
     with db.engine.connect() as conn:
         for table, column, col_type in migrations:

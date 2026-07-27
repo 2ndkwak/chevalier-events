@@ -189,6 +189,7 @@ class Event(db.Model):
     hosts           = db.Column("menu_notes", db.Text)
     chef_name       = db.Column(db.String(200))
     paypal_link     = db.Column(db.String(500))
+    paypal_price_per_person = db.Column(db.Numeric(10, 2))
     menu_finalized  = db.Column(db.Boolean, default=False, nullable=False)
     capacity        = db.Column(db.Integer)             # None = unlimited
     price_per_person = db.Column(db.Numeric(10, 2))    # None = no charge / TBD

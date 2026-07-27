@@ -41,13 +41,40 @@
           <div style="font-size:1rem; color:var(--ink-mid);">{{ event.dress_code }}</div>
         </div>
         {% endif %}
-        {% if event.price_per_person %}
+        {% if event.chef_name %}
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Executive Chef</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">{{ event.chef_name }}</div>
+        </div>
+        {% endif %}
+        {% if event.hosts %}
+        <div>
+          <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                      color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Hosted by</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">{{ event.hosts }}</div>
+        </div>
+        {% endif %}
         <div>
           <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
                       color:var(--burgundy); font-family:sans-serif; margin-bottom:.2rem;">Price per person</div>
-          <div style="font-size:1rem; color:var(--ink-mid);">${{ "%.2f"|format(event.price_per_person|float) }}</div>
+          <div style="font-size:1rem; color:var(--ink-mid);">
+            {% if event.price_per_person %}
+              ${{ "%.2f"|format(event.price_per_person|float) }}
+              {% if event.paypal_link %}
+                <br><span class="text-sm">
+                  Or
+                  {% if event.paypal_price_per_person %}
+                    ${{ "%.2f"|format(event.paypal_price_per_person|float) }}/person
+                  {% endif %}
+                  via <a href="{{ event.paypal_link }}" target="_blank" rel="noopener" style="color:var(--burgundy);">PayPal</a>
+                </span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">TBD</span>
+            {% endif %}
+          </div>
         </div>
-        {% endif %}
         {% if event.rsvp_deadline %}
         <div>
           <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
@@ -64,12 +91,6 @@
         <div style="font-size:.95rem; line-height:1.7; color:var(--ink-mid);">{{ event.description|safe }}</div>
       {% endif %}
 
-      {% if event.menu_notes %}
-        <hr class="gold-rule">
-        <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
-                    color:var(--burgundy); font-family:sans-serif; margin-bottom:.4rem;">Menu</div>
-        <div class="text-sm" style="color:var(--ink-mid);">{{ event.menu_notes|safe }}</div>
-      {% endif %}
     </div>
 
     <!-- Guest list -->

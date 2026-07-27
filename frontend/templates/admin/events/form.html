@@ -144,9 +144,35 @@
                placeholder="e.g. Black tie, Formal..."
                value="{{ event.dress_code or '' if event else '' }}">
       </div>
+      <div class="form-group">
+        <label for="chef_name">Executive chef</label>
+        <input type="text" id="chef_name" name="chef_name"
+               placeholder="e.g. Jonathon Barger"
+               value="{{ event.chef_name or '' if event else '' }}">
+      </div>
       <div class="form-group full">
-        <label for="menu_notes">Menu notes</label>
-        <textarea id="menu_notes" name="menu_notes" rows="3">{{ event.menu_notes or '' if event else '' }}</textarea>
+        <label for="hosts">Hosts (if any)</label>
+        <input type="text" id="hosts" name="hosts"
+               placeholder="e.g. Hosted by the Taylors"
+               value="{{ event.hosts or '' if event else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="paypal_link">PayPal link</label>
+        <input type="text" id="paypal_link" name="paypal_link"
+               placeholder="Leave blank until pricing is set"
+               value="{{ event.paypal_link or '' if event else '' }}">
+      </div>
+      <div class="form-group">
+        <label for="paypal_price_per_person">PayPal price per person (covers fees)</label>
+        <input type="number" id="paypal_price_per_person" name="paypal_price_per_person"
+               min="0" step="0.01" placeholder="Usually a few dollars more"
+               value="{{ '%.2f'|format(event.paypal_price_per_person|float) if event and event.paypal_price_per_person else '' }}">
+      </div>
+      <div class="form-group" style="display:flex; align-items:center; gap:.5rem; padding-top:1.6rem;">
+        <input type="checkbox" id="menu_finalized" name="menu_finalized" value="1"
+               style="width:auto;"
+               {{ 'checked' if event and event.menu_finalized else '' }}>
+        <label for="menu_finalized" style="margin:0;">Menu finalized with chef</label>
       </div>
     </div>
 
@@ -201,8 +227,7 @@
     // boilerplate, so it doesn't need to be retyped for every event.
     var defaultText =
       "<p><br></p><p><br></p><p><br></p><p><br></p>" +
-      "<p>Price per person: $TBD. Or $TBD/person via PayPal at: TBD. " +
-      "If paid by check, make out to Cleveland Chevaliers and mail to: Mark Eisele</p>" +
+      "<p>If paid by check, make out to Cleveland Chevaliers and mail to: Mark Eisele</p>" +
       "<p>2915 Winthrop Street</p>" +
       "<p>Shaker Heights, Ohio 44120</p>" +
       "<p><br></p>" +

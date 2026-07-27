@@ -450,7 +450,22 @@ def _event_from_form(event, form):
     event.teaser       = form.get("teaser", "").strip() or None
     event.description = form.get("description", "").strip() or None
     event.dress_code  = form.get("dress_code", "").strip() or None
-    event.menu_notes  = form.get("menu_notes", "").strip() or None
+    event.hosts       = form.get("hosts", "").strip() or None
+    event.chef_name   = form.get("chef_name", "").strip() or None
+    paypal_link = form.get("paypal_link", "").strip()
+    if paypal_link and not paypal_link.lower().startswith(("http://", "https://")):
+        paypal_link = "https://" + paypal_link
+    event.paypal_link = paypal_link or None
+    event.menu_finalized = bool(form.get("menu_finalized"))
+    paypal_price_str = form.get("paypal_price_per_person", "").strip()
+    if paypal_price_str:
+        try:
+            from decimal import Decimal
+            event.paypal_price_per_person = Decimal(paypal_price_str)
+        except Exception:
+            pass
+    else:
+        event.paypal_price_per_person = None
     event.capacity         = form.get("capacity", type=int) or None
     price_str = form.get("price_per_person", "").strip()
     if price_str:
