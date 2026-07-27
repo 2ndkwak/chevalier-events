@@ -106,6 +106,9 @@ def _auto_migrate():
         ("wine_tags", "course",        "INTEGER DEFAULT 1"),
         ("persons", "person_type_updated_at",  "DATETIME"),
         ("persons", "dietary_tags_updated_at", "DATETIME"),
+        ("events", "chef_name",       "VARCHAR(200)"),
+        ("events", "paypal_link",     "VARCHAR(500)"),
+        ("events", "menu_finalized",  "BOOLEAN DEFAULT 0"),
     ]
     with db.engine.connect() as conn:
         for table, column, col_type in migrations:

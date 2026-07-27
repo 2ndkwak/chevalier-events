@@ -184,7 +184,12 @@ class Event(db.Model):
     teaser          = db.Column(db.String(300))   # short hook line for portal home list
     description     = db.Column(db.Text)
     dress_code      = db.Column(db.String(200))
-    menu_notes      = db.Column(db.Text)
+    # "hosts" reuses the old "menu_notes" column -- unused, so repurposed
+    # in place instead of adding a new column.
+    hosts           = db.Column("menu_notes", db.Text)
+    chef_name       = db.Column(db.String(200))
+    paypal_link     = db.Column(db.String(500))
+    menu_finalized  = db.Column(db.Boolean, default=False, nullable=False)
     capacity        = db.Column(db.Integer)             # None = unlimited
     price_per_person = db.Column(db.Numeric(10, 2))    # None = no charge / TBD
     rsvp_deadline   = db.Column(db.DateTime)
@@ -211,6 +216,8 @@ class Event(db.Model):
     seat_assignments = db.relationship("SeatAssignment", back_populates="event",
                                       cascade="all, delete-orphan")
     allergy_offs    = db.relationship("EventAllergyOff", back_populates="event",
+                                      cascade="all, delete-orphan")
+    materials       = db.relationship("EventMaterial", back_populates="event",
                                       cascade="all, delete-orphan")
 
     @property
@@ -424,6 +431,29 @@ class EventAllergyOff(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("event_id", "tag_id", name="uq_event_tag_off"),
+    )
+
+
+# --- EVENT MATERIALS CHECKLIST -------------------------------------------------
+# Presence of a row = that pre-event material has been prepared and checked off
+# by the Grand Senechal. Purely manual -- nothing here is set automatically by
+# generating a document, since "generated" and "reviewed and ready" are
+# deliberately different moments in the workflow.
+
+class EventMaterial(db.Model):
+    __tablename__ = "event_materials"
+
+    id           = db.Column(db.Integer, primary_key=True)
+    event_id     = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    material_key = db.Column(db.String(50), nullable=False)
+    # Values: "menu_booklet" | "wine_tags" | "table_name_cards" |
+    #         "name_badges"  | "charts_and_lists"
+    checked_at   = db.Column(db.DateTime, default=datetime.utcnow)
+
+    event        = db.relationship("Event", back_populates="materials")
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "material_key", name="uq_event_material"),
     )
 
 
