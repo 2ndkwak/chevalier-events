@@ -94,6 +94,8 @@ def dashboard():
                           .order_by(Person.dietary_tags_updated_at.desc())
                           .limit(6).all())
 
+    next_actions = {e.id: _next_action_for_event(e, today) for e in upcoming}
+
     return render_template("admin/dashboard.html",
                            upcoming=upcoming,
                            total_members=total_members,
@@ -104,4 +106,28 @@ def dashboard():
                            outstanding_invites=outstanding_invites,
                            outstanding_invites_more=outstanding_invites_more,
                            roster_changes=roster_changes,
-                           dietary_edits=dietary_edits)
+                           dietary_edits=dietary_edits,
+                           next_actions=next_actions)
+
+
+def _next_action_for_event(event, today):
+    """One-line status for the dashboard's upcoming events table, reflecting
+    where this event currently sits in the Grand Senechal's workflow."""
+    if not event.menu_finalized:
+        return "Waiting on chef's menu proposal"
+    if not event.price_per_person:
+        return "Set pricing & PayPal link"
+    if not event.wine_tags:
+        return "Send menu to Cellarer for wine selection"
+
+    days_out = (event.event_date.date() - today).days
+    if days_out > 2:
+        waitlist_count = sum(1 for r in event.rsvps if r.status == "waitlist")
+        return f"Promoting -- {event.confirmed_count} confirmed, {waitlist_count} waitlist"
+
+    materials_total = 5
+    materials_done = len(event.materials)
+    if materials_done < materials_total:
+        return f"Materials: {materials_done} of {materials_total} done"
+
+    return "Ready for event day"

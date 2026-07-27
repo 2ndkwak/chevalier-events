@@ -31,6 +31,9 @@
         <td>
           <a href="{{ url_for('events.edit_event', event_id=event.id) }}"
              style="color:var(--burgundy-dk); font-weight:500;">{{ event.title }}</a>
+          {% if next_actions and next_actions.get(event.id) %}
+          <div class="text-muted text-sm" style="margin-top:.15rem;">{{ next_actions[event.id] }}</div>
+          {% endif %}
         </td>
         <td>{{ event.event_date.strftime("%b %d, %Y") }}</td>
         <td>{{ event.venue_name or '—' }}</td>

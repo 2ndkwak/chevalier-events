@@ -29,7 +29,13 @@ def list_events():
                   .all())
     else:
         events = Event.query.order_by(Event.event_date.asc()).all()
-    return render_template("admin/events/list.html", events=events, show=show)
+
+    from ..routes.admin import _next_action_for_event
+    next_actions = {e.id: _next_action_for_event(e, now.date())
+                    for e in events if e.event_date >= now}
+
+    return render_template("admin/events/list.html", events=events, show=show,
+                           next_actions=next_actions)
 
 
 # --- CREATE -------------------------------------------------------------------

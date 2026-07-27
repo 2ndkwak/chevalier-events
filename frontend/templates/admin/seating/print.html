@@ -51,6 +51,35 @@
       }
       .screen-bar h2 { font-size: 1rem; font-weight: normal; letter-spacing: .04em; }
       .screen-bar .actions { display: flex; gap: .5rem; flex-wrap: wrap; }
+
+      .materials-bar {
+        background: var(--gold-pale);
+        border: 1px solid var(--gold);
+        border-radius: 6px;
+        padding: .6rem 1.2rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 1.2rem;
+        flex-wrap: wrap;
+        font-family: sans-serif;
+        font-size: .8rem;
+      }
+      .materials-bar .materials-label {
+        font-weight: bold;
+        color: var(--burgundy);
+        text-transform: uppercase;
+        font-size: .68rem;
+        letter-spacing: .06em;
+      }
+      .materials-bar label {
+        display: flex;
+        align-items: center;
+        gap: .35rem;
+        cursor: pointer;
+        color: var(--ink);
+      }
+      .materials-bar input[type="checkbox"] { cursor: pointer; }
       .btn {
         font-family: sans-serif;
         font-size: .78rem;
@@ -103,7 +132,7 @@
 
     /* ── Print base ────────────────────────────────────────────────────── */
     @media print {
-      .screen-bar, .tab-bar { display: none !important; }
+      .screen-bar, .tab-bar, .materials-bar { display: none !important; }
       .print-section { display: none !important; }
       .print-section.printing { display: block !important; }
       .page-preview { box-shadow: none; padding: 0.25in; }
@@ -412,6 +441,31 @@
   </div>
 </div>
 
+<!-- ── Pre-event materials checklist (persists across all tabs) ────────────── -->
+<div class="materials-bar">
+  <span class="materials-label">Pre-event materials:</span>
+  <label>
+    <input type="checkbox" data-material="menu_booklet" {{ 'checked' if 'menu_booklet' in checked_materials else '' }}>
+    Menu booklet
+  </label>
+  <label>
+    <input type="checkbox" data-material="wine_tags" {{ 'checked' if 'wine_tags' in checked_materials else '' }}>
+    Wine tags
+  </label>
+  <label>
+    <input type="checkbox" data-material="table_name_cards" {{ 'checked' if 'table_name_cards' in checked_materials else '' }}>
+    Table name cards
+  </label>
+  <label>
+    <input type="checkbox" data-material="name_badges" {{ 'checked' if 'name_badges' in checked_materials else '' }}>
+    Name badges
+  </label>
+  <label>
+    <input type="checkbox" data-material="charts_and_lists" {{ 'checked' if 'charts_and_lists' in checked_materials else '' }}>
+    Charts &amp; lists
+  </label>
+</div>
+
 <!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
 <div class="tab-bar">
   <button class="tab active" onclick="showTab('visual',this)">① Visual chart</button>
@@ -698,6 +752,30 @@
     document.getElementById(tabSectionMap[currentTab]).classList.add('printing');
     window.print();
   }
+
+  // ── Materials checklist: save on toggle, no page reload ─────────────────
+  document.querySelectorAll('.materials-bar input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', function() {
+      const key = this.dataset.material;
+      const wasChecked = this.checked;
+      fetch("{{ url_for('seating.toggle_material', event_id=event.id) }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ material_key: key })
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (!data.ok) {
+            this.checked = !wasChecked;
+            alert("Could not save -- please try again.");
+          }
+        })
+        .catch(() => {
+          this.checked = !wasChecked;
+          alert("Could not save -- please try again.");
+        });
+    });
+  });
 </script>
 </body>
 </html>
