@@ -823,6 +823,10 @@ def wine_tags(event_id):
                         if not row.get("domain") or not row.get("appellation"):
                             errors.append(f"Row {i}: domain and appellation are required")
                             continue
+                        color = row.get("color", "").strip().lower() or None
+                        if color and color not in ("red", "white"):
+                            errors.append(f"Row {i}: color must be 'red' or 'white' (or blank), got '{color}'")
+                            continue
                         new_wines.append({
                             "position": position,
                             "course": course,
@@ -830,6 +834,7 @@ def wine_tags(event_id):
                             "domain": row["domain"],
                             "appellation": row["appellation"],
                             "label": row.get("label", "").strip() or None,
+                            "color": color,
                         })
 
                     if not errors:
@@ -896,14 +901,14 @@ def wine_tags_template(event_id):
     import csv, io
     from flask import Response
 
-    columns = ["position", "course", "vintage", "domain", "appellation", "label"]
+    columns = ["position", "course", "vintage", "domain", "appellation", "label", "color"]
     example_rows = [
         {"position": "1", "course": "1", "vintage": "2019", "domain": "Domaine Leflaive",
-         "appellation": "Puligny-Montrachet, Vieilles Vignes, Premier Cru", "label": "Cocktail"},
+         "appellation": "Puligny-Montrachet, Vieilles Vignes, Premier Cru", "label": "Cocktail", "color": "white"},
         {"position": "2", "course": "1", "vintage": "2018", "domain": "Domaine de la Romanee-Conti",
-         "appellation": "Echezeaux Grand Cru, Vieilles Vignes", "label": "Cocktail"},
+         "appellation": "Echezeaux Grand Cru, Vieilles Vignes", "label": "Cocktail", "color": "red"},
         {"position": "1", "course": "2", "vintage": "2020", "domain": "Chateau Margaux",
-         "appellation": "Margaux Grand Cru Classe", "label": "Premier Assiette"},
+         "appellation": "Margaux Grand Cru Classe", "label": "Premier Assiette", "color": "red"},
     ]
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=columns)

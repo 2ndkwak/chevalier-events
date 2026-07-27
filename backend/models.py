@@ -419,6 +419,8 @@ class WineTag(db.Model):
     vintage     = db.Column(db.String(20))
     domain      = db.Column(db.String(200), nullable=False)
     appellation = db.Column(db.String(300), nullable=False)
+    color       = db.Column(db.String(10), nullable=True)  # "red" | "white" -- for the menu booklet
+    color       = db.Column(db.String(10), nullable=True)  # "red" | "white" -- for the menu booklet
 
     created_at  = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow,

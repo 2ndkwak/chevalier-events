@@ -114,6 +114,7 @@ def _auto_migrate():
         ("rsvp_guests", "is_officer",    "BOOLEAN DEFAULT 0"),
         ("rsvp_guests", "officer_title", "VARCHAR(200)"),
         ("rsvp_guests", "officer_rank",  "INTEGER"),
+        ("wine_tags", "color", "VARCHAR(10)"),
     ]
     with db.engine.connect() as conn:
         for table, column, col_type in migrations:
