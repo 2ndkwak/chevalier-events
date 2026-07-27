@@ -33,8 +33,19 @@
     <a href="{{ url_for('seating.menu_items_template', event_id=event.id) }}" class="btn btn-outline">Download CSV template</a>
   </form>
   <p class="text-muted text-sm" style="margin-top:.6rem; margin-bottom:0;">
-    Columns: <code>course</code>, <code>dish_french</code>, <code>dish_english</code> (optional).
-    One row per course -- course numbers must match the wine list's course numbers.
+    Columns: <code>course</code>, <code>dish_french</code>, <code>dish_english</code> (optional),
+    <code>label</code> (optional). One row per course -- course numbers must match the wine
+    list's course numbers.
+  </p>
+  <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
+    <strong>Label</strong> sets that course's heading in the menu booklet (e.g. "Cocktails",
+    "Premier Assiette", "Selection de Fromages") -- shared with the wine list, so both line up
+    under the same heading.
+  </p>
+  <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
+    <strong>Course numbering:</strong> 0 = Cocktails (leave dish_french/dish_english blank),
+    1 = Premier Assiette, 2 = Deuxieme, 3 = Troisieme, 4 = Fromages -- matches the French
+    ordinals exactly. Use the same numbers on the wine list so wines and dishes line up.
   </p>
 </div>
 
@@ -61,4 +72,22 @@
   <p class="text-muted text-sm" style="margin:0;">No menu uploaded yet. Upload a CSV above to get started.</p>
 </div>
 {% endif %}
+
+<div class="card">
+  <div class="card-title">Generate Menu Booklet</div>
+  <p class="text-muted text-sm" style="margin-top:0;">
+    Produces the full four-panel booklet -- cover, attendee list (Officers, Chevaliers,
+    Honoraire, guests, Aspirants), wines, and menu -- as a single landscape sheet ready to
+    fold and print. Pulls current confirmed RSVPs, the wine list, the menu, and this event's
+    officer ranking automatically.
+  </p>
+  <form method="GET" action="{{ url_for('seating.generate_booklet', event_id=event.id) }}"
+        style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+    <select name="font">
+      <option value="gregorian">GregorianFLF (default)</option>
+      <option value="serif">Serif (fallback)</option>
+    </select>
+    <button type="submit" class="btn btn-gold">Generate Booklet (PDF)</button>
+  </form>
+</div>
 {% endblock %}

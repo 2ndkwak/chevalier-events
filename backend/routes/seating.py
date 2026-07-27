@@ -833,7 +833,6 @@ def wine_tags(event_id):
                             "vintage": row.get("vintage", "") or None,
                             "domain": row["domain"],
                             "appellation": row["appellation"],
-                            "label": row.get("label", "").strip() or None,
                             "color": color,
                         })
 
@@ -865,25 +864,8 @@ def wine_tags(event_id):
                     if not errors and new_wines:
                         # Replace the whole list for this event
                         WineTag.query.filter_by(event_id=event_id).delete()
-                        course_labels = {}
                         for w in new_wines:
-                            label = w.pop("label", None)
-                            if label:
-                                course_labels[w["course"]] = label
                             db.session.add(WineTag(event_id=event_id, **w))
-
-                        # Upsert course labels -- only for courses that actually had a
-                        # non-blank label in this upload, so a re-upload without the
-                        # label column never wipes out labels set previously.
-                        for course_num, label in course_labels.items():
-                            existing_label = EventCourse.query.filter_by(
-                                event_id=event_id, course=course_num).first()
-                            if existing_label:
-                                existing_label.label = label
-                            else:
-                                db.session.add(EventCourse(event_id=event_id,
-                                                           course=course_num, label=label))
-
                         db.session.commit()
                         flash(f"Wine list saved -- {len(new_wines)} wines.", "success")
                         return redirect(url_for("seating.wine_tags", event_id=event_id))
@@ -901,14 +883,14 @@ def wine_tags_template(event_id):
     import csv, io
     from flask import Response
 
-    columns = ["position", "course", "vintage", "domain", "appellation", "label", "color"]
+    columns = ["position", "course", "vintage", "domain", "appellation", "color"]
     example_rows = [
-        {"position": "1", "course": "1", "vintage": "2019", "domain": "Domaine Leflaive",
-         "appellation": "Puligny-Montrachet, Vieilles Vignes, Premier Cru", "label": "Cocktail", "color": "white"},
-        {"position": "2", "course": "1", "vintage": "2018", "domain": "Domaine de la Romanee-Conti",
-         "appellation": "Echezeaux Grand Cru, Vieilles Vignes", "label": "Cocktail", "color": "red"},
-        {"position": "1", "course": "2", "vintage": "2020", "domain": "Chateau Margaux",
-         "appellation": "Margaux Grand Cru Classe", "label": "Premier Assiette", "color": "red"},
+        {"position": "1", "course": "0", "vintage": "2019", "domain": "Domaine Leflaive",
+         "appellation": "Puligny-Montrachet, Vieilles Vignes, Premier Cru", "color": "white"},
+        {"position": "2", "course": "0", "vintage": "2018", "domain": "Domaine de la Romanee-Conti",
+         "appellation": "Echezeaux Grand Cru, Vieilles Vignes", "color": "red"},
+        {"position": "1", "course": "1", "vintage": "2020", "domain": "Chateau Margaux",
+         "appellation": "Margaux Grand Cru Classe", "color": "red"},
     ]
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=columns)
@@ -931,9 +913,20 @@ def print_wine_tags(event_id):
     from flask import send_file
 
     event = Event.query.get_or_404(event_id)
-    wines = WineTag.query.filter_by(event_id=event_id).order_by(WineTag.course, WineTag.position).all()
-    if not wines:
+    all_wines = WineTag.query.filter_by(event_id=event_id).order_by(WineTag.course, WineTag.position).all()
+    if not all_wines:
         flash("No wine list uploaded for this event yet.", "error")
+        return redirect(url_for("seating.wine_tags", event_id=event_id))
+
+    # Course 0 = Cocktails, by convention -- no physical tag is printed for
+    # those wines (they're served before guests are seated, so a die-cut
+    # tag for them is wasted stock). They still appear normally in the
+    # wine list and the menu booklet's wine panel; this exclusion is
+    # scoped to the printed tags only.
+    wines = [w for w in all_wines if w.course != 0]
+    if not wines:
+        flash("Only Cocktails-course wines are on the list for this event -- "
+              "no tags are printed for those. Add wines for a real course to print tags.", "error")
         return redirect(url_for("seating.wine_tags", event_id=event_id))
 
     guest_count = event.confirmed_count
@@ -1000,7 +993,7 @@ def menu_items(event_id):
                 reader = None
 
             if reader is not None:
-                required = {"course", "dish_french"}
+                required = {"course"}
                 fieldnames = {f.strip().lower() for f in (reader.fieldnames or [])}
                 missing = required - fieldnames
                 if missing:
@@ -1016,13 +1009,26 @@ def menu_items(event_id):
                         except ValueError:
                             errors.append(f"Row {i}: course must be a number, got '{row['course']}'")
                             continue
-                        if not row.get("dish_french"):
-                            errors.append(f"Row {i}: dish_french is required")
-                            continue
+                        # dish_french is optional -- a row can carry just a course
+                        # number and a label (e.g. course 0 = "Cocktails", which
+                        # has wines but no matching dish) with no dish text at
+                        # all. Course numbering convention: 0 = Cocktails,
+                        # 1 = Premier Assiette, 2 = Deuxieme, 3 = Troisieme,
+                        # 4 = Fromages -- matches the French ordinals exactly,
+                        # so course number and "which course" never drift
+                        # apart. The CSV template pre-fills "Leave Blank" as a
+                        # hint for the Cocktails row -- treat it the same as a
+                        # genuinely empty cell in case it's left in place
+                        # rather than deleted.
+                        def _blank_or(value):
+                            v = (value or "").strip()
+                            return None if not v or v.lower() == "leave blank" else v
+
                         new_items.append({
                             "course": course,
-                            "dish_french": row["dish_french"],
-                            "dish_english": row.get("dish_english", "") or None,
+                            "dish_french": _blank_or(row.get("dish_french")),
+                            "dish_english": _blank_or(row.get("dish_english")),
+                            "label": row.get("label", "").strip() or None,
                         })
 
                     if not errors:
@@ -1045,8 +1051,25 @@ def menu_items(event_id):
 
                     if not errors and new_items:
                         MenuItem.query.filter_by(event_id=event_id).delete()
+                        course_labels = {}
                         for m in new_items:
+                            label = m.pop("label", None)
+                            if label:
+                                course_labels[m["course"]] = label
                             db.session.add(MenuItem(event_id=event_id, **m))
+
+                        # Upsert course labels -- only for courses that actually had a
+                        # non-blank label in this upload, so a re-upload without the
+                        # label column never wipes out labels set previously.
+                        for course_num, label in course_labels.items():
+                            existing_label = EventCourse.query.filter_by(
+                                event_id=event_id, course=course_num).first()
+                            if existing_label:
+                                existing_label.label = label
+                            else:
+                                db.session.add(EventCourse(event_id=event_id,
+                                                           course=course_num, label=label))
+
                         db.session.commit()
                         flash(f"Menu saved -- {len(new_items)} course(s).", "success")
                         return redirect(url_for("seating.menu_items", event_id=event_id))
@@ -1064,12 +1087,13 @@ def menu_items_template(event_id):
     import csv, io
     from flask import Response
 
-    columns = ["course", "dish_french", "dish_english"]
+    columns = ["course", "dish_french", "dish_english", "label"]
     example_rows = [
+        {"course": "0", "dish_french": "Leave Blank", "dish_english": "Leave Blank", "label": "Cocktails"},
         {"course": "1", "dish_french": "Seriole, citron Meyer, fenouil, emulsion d'olives Castelvetrano, capres",
-         "dish_english": "Yellowtail, Meyer lemon, fennel, Castelvetrano olive emulsion, capers"},
+         "dish_english": "Yellowtail, Meyer lemon, fennel, Castelvetrano olive emulsion, capers", "label": "Premier Assiette"},
         {"course": "2", "dish_french": "Canard, champignons sauvages, fregola sarda, asperges, peche, glace au jus de canard",
-         "dish_english": "Duck, wild mushrooms, fregola sarda, asparagus, peach, duck glace"},
+         "dish_english": "Duck, wild mushrooms, fregola sarda, asparagus, peach, duck glace", "label": "Deuxieme Assiette"},
     ]
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=columns)
@@ -1133,6 +1157,228 @@ def officer_ranking(event_id):
     combined.sort(key=lambda x: (x["rank"] if x["rank"] is not None else 9999, x["name"]))
 
     return render_template("admin/seating/officers.html", event=event, officers=combined)
+
+
+# --- MENU BOOKLET --------------------------------------------------------------
+
+def _honorific_and_title(partner):
+    """For a confirmed partner shown alongside a primary attendee: their
+    Mme./M. honorific (by gender) and, if they independently hold their
+    own membership title, that title too (e.g. "Chevalier" -- printed red,
+    same as any other title)."""
+    honorific = None
+    if partner.gender == "F":
+        honorific = "Mme."
+    elif partner.gender == "M":
+        honorific = "M."
+    title_map = {"member": "Chevalier", "honoraire": None, "aspirant": "Aspirant"}
+    title = title_map.get(partner.person_type)
+    # Honoraire partners use their personal title (e.g. "Chef"), same as
+    # the Honoraire section itself, rather than the word "Honoraire".
+    if partner.person_type == "honoraire" and partner.title:
+        title = partner.title
+    return honorific, title
+
+
+def _person_section_lines(people, confirmed_person_ids, paired_ids, category_title):
+    """Builds attendee lines for one section (Chevaliers/Honoraire/Aspirants),
+    pairing with a confirmed partner where applicable and skipping anyone
+    already shown as someone else's partner."""
+    import os as _os, sys as _sys
+    project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
+    if project_root not in _sys.path:
+        _sys.path.insert(0, project_root)
+    import gen_menu_booklet as _gmb
+
+    lines = []
+    for p in sorted(people, key=lambda x: ((x.last_name or "").lower(), (x.first_name or "").lower())):
+        if p.id in paired_ids:
+            continue
+        primary_title = category_title
+        if p.person_type == "honoraire" and p.title:
+            primary_title = p.title
+        partner_honorific = partner_title = partner_name = None
+        if p.partner_id:
+            partner = Person.query.get(p.partner_id)
+            if partner and partner.id in confirmed_person_ids:
+                partner_honorific, partner_title = _honorific_and_title(partner)
+                partner_name = partner.display_name
+                paired_ids.add(partner.id)
+        lines.append(_gmb.attendee_line_markup(primary_title, p.display_name,
+                                               partner_honorific, partner_title, partner_name))
+    return lines
+
+
+def build_booklet_data(event):
+    """Assembles the full data dict gen_menu_booklet.generate() needs,
+    pulling from confirmed RSVPs, wine tags, menu items, course labels,
+    and this event's officer ranking."""
+    import os as _os, sys as _sys
+    project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
+    if project_root not in _sys.path:
+        _sys.path.insert(0, project_root)
+    import gen_menu_booklet as _gmb
+
+    confirmed_rsvps = RSVP.query.filter_by(event_id=event.id, status="confirmed").all()
+    confirmed_person_ids = {r.person_id for r in confirmed_rsvps}
+    paired_ids = set()
+
+    # -- Officers: member officers (ranked) + guest officers (ranked) --
+    officer_entries = []
+    for r in confirmed_rsvps:
+        p = r.person
+        if p.is_officer and r.officer_rank is not None:
+            officer_entries.append((r.officer_rank, "rsvp", r))
+    for r in confirmed_rsvps:
+        for g in r.guests:
+            if g.is_officer and g.officer_rank is not None:
+                officer_entries.append((g.officer_rank, "guest", g))
+    officer_entries.sort(key=lambda e: e[0])
+
+    officers = []
+    for rank, kind, obj in officer_entries:
+        if kind == "rsvp":
+            p = obj.person
+            partner_honorific = partner_title = partner_name = None
+            if p.partner_id:
+                partner = Person.query.get(p.partner_id)
+                if partner and partner.id in confirmed_person_ids:
+                    partner_honorific, partner_title = _honorific_and_title(partner)
+                    partner_name = partner.display_name
+                    paired_ids.add(partner.id)
+            officers.append(_gmb.attendee_line_markup(
+                p.officer_role or "Officier", p.display_name,
+                partner_honorific, partner_title, partner_name))
+            paired_ids.add(p.id)
+        else:
+            officers.append(_gmb.attendee_line_markup(obj.officer_title or "Officier", obj.display_name))
+
+    # -- Members / Honoraires / Aspirants (non-officers only) --
+    members_people = [r.person for r in confirmed_rsvps
+                      if r.person.person_type == "member" and not r.person.is_officer]
+    honoraire_people = [r.person for r in confirmed_rsvps
+                        if r.person.person_type == "honoraire" and not r.person.is_officer]
+    aspirant_people = [r.person for r in confirmed_rsvps
+                       if r.person.person_type == "aspirant" and not r.person.is_officer]
+
+    members = _person_section_lines(members_people, confirmed_person_ids, paired_ids, "Chevalier")
+    honoraires = _person_section_lines(honoraire_people, confirmed_person_ids, paired_ids, None)
+    aspirants = _person_section_lines(aspirant_people, confirmed_person_ids, paired_ids, "Aspirant")
+
+    # -- Guests, grouped by host, excluding those marked as officers (shown above instead) --
+    guests_by_host = {}
+    for r in confirmed_rsvps:
+        for g in r.guests:
+            if g.is_officer:
+                continue
+            guests_by_host.setdefault(r.person.display_name, []).append(g)
+
+    guest_lines = []
+    for host_name, guests in guests_by_host.items():
+        names = []
+        for g in guests:
+            if g.gender == "F":
+                names.append(f"Mme. {g.display_name}")
+            elif g.gender == "M":
+                names.append(f"M. {g.display_name}")
+            else:
+                names.append(g.display_name)
+        label = "Guest of" if len(guests) == 1 else "Guests of"
+        guest_lines.append(f"{label} {host_name}: {' et '.join(names)}")
+
+    # -- Wines and menu, grouped by course, with course labels --
+    course_labels = {c.course: c.label for c in event.courses}
+    wines = WineTag.query.filter_by(event_id=event.id).order_by(WineTag.course, WineTag.position).all()
+    wine_by_course = {}
+    for w in wines:
+        wine_by_course.setdefault(w.course, []).append(w)
+    wine_courses = []
+    for course_num in sorted(wine_by_course.keys()):
+        label = course_labels.get(course_num, f"Course {course_num}")
+        wine_list = []
+        for w in wine_by_course[course_num]:
+            text_parts = [p for p in [w.vintage, w.domain, f'"{w.appellation}"' if w.appellation else None] if p]
+            wine_list.append({"text": " ".join(text_parts), "color": w.color})
+        wine_courses.append({"label": label, "wines": wine_list})
+
+    menu_items = MenuItem.query.filter_by(event_id=event.id).order_by(MenuItem.course).all()
+    menu_by_course = []
+    for m in menu_items:
+        label = course_labels.get(m.course, f"Course {m.course}")
+        menu_by_course.append({"label": label, "dish_french": m.dish_french, "dish_english": m.dish_english})
+
+    logo_path = _os.path.join(project_root, "frontend", "static", "img", "Chevalier_Logo.jpg")
+
+    def _short_text(value, max_len=80):
+        """Safety net for the cover page's unwrapped single-line text --
+        strips embedded line breaks and caps length, so stale/oversized
+        data in any of these fields can never blow out the layout the way
+        a stray legacy value did here."""
+        if not value:
+            return value
+        cleaned = " ".join(value.split())
+        if len(cleaned) > max_len:
+            cleaned = cleaned[:max_len - 1].rstrip() + "..."
+        return cleaned
+
+    return {
+        "event_title": _short_text(event.title, 100),
+        "event_date_str": _gmb.format_french_date(event.event_date),
+        "venue_name": _short_text(event.venue_name),
+        "chef_name": _short_text(event.chef_name),
+        "hosts": _short_text(event.hosts),
+        "logo_path": logo_path,
+        "officers": officers,
+        "members": members,
+        "honoraires": honoraires,
+        "aspirants": aspirants,
+        "guest_lines": guest_lines,
+        "wine_courses": wine_courses,
+        "menu_by_course": menu_by_course,
+    }
+
+
+@seating_bp.route("/event/<int:event_id>/booklet")
+@login_required
+@admin_required
+def generate_booklet(event_id):
+    """Generate the printable menu booklet PDF for this event."""
+    import tempfile, os as _os, sys as _sys
+    from flask import send_file
+
+    event = Event.query.get_or_404(event_id)
+    font_choice = request.args.get("font", "gregorian")
+
+    try:
+        data = build_booklet_data(event)
+    except Exception as e:
+        flash(f"Could not gather booklet data: {e}", "error")
+        return redirect(url_for("seating.menu_items", event_id=event_id))
+
+    project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
+    if project_root not in _sys.path:
+        _sys.path.insert(0, project_root)
+
+    font_path = None
+    if font_choice == "gregorian":
+        font_path = _os.path.join(project_root, "frontend", "static", "fonts", "GregorianFLF.ttf")
+
+    out = tempfile.NamedTemporaryFile(suffix=".pdf", delete=False)
+    out.close()
+
+    try:
+        import importlib
+        import gen_menu_booklet as _gmb
+        importlib.reload(_gmb)
+        _gmb.generate(data, font_path, out.name)
+    except Exception as e:
+        flash(f"Booklet generation failed: {e}", "error")
+        return redirect(url_for("seating.menu_items", event_id=event_id))
+
+    safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
+    filename = f"MenuBooklet_{safe_title}.pdf"
+    return send_file(out.name, as_attachment=True, download_name=filename,
+                     mimetype="application/pdf")
 
 
 # --- HELPERS ------------------------------------------------------------------

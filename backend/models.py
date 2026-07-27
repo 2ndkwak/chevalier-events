@@ -448,7 +448,9 @@ class MenuItem(db.Model):
     event_id      = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
     course        = db.Column(db.Integer, nullable=False, default=1)
 
-    dish_french   = db.Column(db.Text, nullable=False)
+    # Nullable: a course can carry just a label with no dish at all (e.g.
+    # "Cocktails", which has wines but nothing on the food menu).
+    dish_french   = db.Column(db.Text, nullable=True)
     dish_english  = db.Column(db.Text)
 
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)

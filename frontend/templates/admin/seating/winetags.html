@@ -32,21 +32,31 @@
     <a href="{{ url_for('seating.wine_tags_template', event_id=event.id) }}" class="btn btn-outline">Download CSV template</a>
   </form>
   <p class="text-muted text-sm" style="margin-top:.6rem; margin-bottom:0;">
-    Columns: <code>position</code>, <code>course</code>, <code>vintage</code> (optional), <code>domain</code>, <code>appellation</code>, <code>label</code> (optional).
+    Columns: <code>position</code>, <code>course</code>, <code>vintage</code> (optional), <code>domain</code>, <code>appellation</code>, <code>color</code> (optional).
     <strong>Position is the wine's order within its own course</strong> and resets back to 1 for each new
     course -- e.g. the 1st and 2nd wines of course 1 are position 1 and 2, then the 1st wine of course 2
     is position 1 again. That combination prints right on the tag as "position/course" (e.g. "2/1" =
     2nd wine of course 1).
   </p>
   <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
-    <strong>Label</strong> sets that course's heading in the menu booklet (e.g. "Cocktail",
-    "Premier Assiette", "Selection de Fromages"). Only needs to be filled in on one row per
-    course -- and only if you're using the menu booklet feature.
+    <strong>Appellation</strong> is printed as-is below the hole on the wine tag -- put anything
+    you want there (e.g. "Premier Cru, Les Cabottes"), it wraps automatically.
   </p>
   <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
     <strong>Color</strong> ("red" or "white", optional) prints that wine in burgundy on the
     menu booklet's wine list, matching your usual convention. Leave blank for wines you don't
     need colored.
+  </p>
+  <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
+    Setting a course's heading for the menu booklet (e.g. "Cocktails", "Premier Assiette") is
+    done on the <a href="{{ url_for('seating.menu_items', event_id=event.id) }}">Menu</a> page,
+    not here.
+  </p>
+  <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
+    <strong>Course numbering:</strong> 0 = Cocktails, 1 = Premier Assiette, 2 = Deuxieme,
+    3 = Troisieme, 4 = Fromages -- matches the French ordinals exactly, so the course number
+    always tells you which course it is. Use the same numbers on the Menu page so wines and
+    dishes line up.
   </p>
 </div>
 
@@ -76,6 +86,11 @@
   <p class="text-muted text-sm" style="margin-top:0;">
     {{ event.confirmed_count }} confirmed guest{{ 's' if event.confirmed_count != 1 }} &times;
     {{ wines|length }} wines = one tag per glass, grouped by wine so each stack stays together for the pourers.
+  </p>
+  <p class="text-muted text-sm" style="margin-top:.4rem;">
+    Course 0 (Cocktails) wines are excluded from the printed tags -- served before guests are
+    seated, so a die-cut tag would be wasted stock. They still show in the list above and on
+    the menu booklet.
   </p>
   <a href="{{ url_for('seating.print_wine_tags', event_id=event.id) }}" class="btn btn-gold">Print Wine Tags (PDF)</a>
   <p class="text-muted text-sm" style="margin-top:.8rem; margin-bottom:0;">
