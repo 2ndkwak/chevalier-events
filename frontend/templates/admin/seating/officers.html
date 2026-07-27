@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Officer Ranking — {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Officer Ranking</h1>
+  <div style="display:flex; gap:.6rem;">
+    <a href="{{ url_for('seating.print_seating', event_id=event.id) }}" class="btn btn-outline">&larr; Back to Print / Export</a>
+  </div>
+</div>
+
+<p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:1.2rem;">{{ event.title }} &nbsp;&middot;&nbsp; {{ event.event_date.strftime('%B %d, %Y') }}</p>
+
+<div class="card" style="margin-bottom:1.2rem;">
+  <p class="text-muted text-sm" style="margin-top:0;">
+    Sets the print order for the "Commandeurs et Officiers" section of the menu booklet, for this
+    event only. Combines your own confirmed officers with any guest marked as a visiting officer
+    on their RSVP. Titles for your own officers come from their member record; guest titles come
+    from what was entered on their RSVP. Leave rank blank to leave someone off the printed list
+    entirely.
+  </p>
+</div>
+
+{% if officers %}
+<div class="card">
+  <form method="POST" action="{{ url_for('seating.officer_ranking', event_id=event.id) }}">
+    <table class="data-table">
+      <thead>
+        <tr><th style="width:100px;">Rank</th><th>Name</th><th>Title</th></tr>
+      </thead>
+      <tbody>
+        {% for o in officers %}
+        <tr>
+          <td>
+            <input type="number" name="rank_{{ o.kind }}_{{ o.id }}" min="1"
+                   value="{{ o.rank if o.rank is not none else '' }}"
+                   style="width:70px;">
+          </td>
+          <td>{{ o.name }}{% if o.kind == 'guest' %} <span class="text-muted text-sm">(guest)</span>{% endif %}</td>
+          <td>{{ o.title }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <hr class="divider">
+    <button type="submit" class="btn btn-primary">Save ranking</button>
+  </form>
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-sm" style="margin:0;">
+    No confirmed officers yet -- either no officer members have RSVP'd, or no guest has been
+    marked as a visiting officer on their RSVP entry.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

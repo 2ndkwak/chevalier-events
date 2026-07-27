@@ -1048,6 +1048,58 @@ def menu_items_template(event_id):
     )
 
 
+# --- OFFICER RANKING (for the menu booklet) -----------------------------------
+
+@seating_bp.route("/event/<int:event_id>/officers", methods=["GET", "POST"])
+@login_required
+@admin_required
+def officer_ranking(event_id):
+    """Assign print order to this event's officer list -- combines confirmed
+    member officers (title comes from their permanent Person.officer_role)
+    with any guest marked as a visiting officer on their RSVP entry."""
+    event = Event.query.get_or_404(event_id)
+
+    if request.method == "POST":
+        for key, val in request.form.items():
+            val = val.strip()
+            rank = int(val) if val else None
+            if key.startswith("rank_rsvp_"):
+                rid = int(key[len("rank_rsvp_"):])
+                r = RSVP.query.get(rid)
+                if r:
+                    r.officer_rank = rank
+            elif key.startswith("rank_guest_"):
+                gid = int(key[len("rank_guest_"):])
+                g = RSVPGuest.query.get(gid)
+                if g:
+                    g.officer_rank = rank
+        db.session.commit()
+        flash("Officer ranking saved.", "success")
+        return redirect(url_for("seating.officer_ranking", event_id=event_id))
+
+    member_officers = (RSVP.query.join(Person, RSVP.person_id == Person.id)
+                        .filter(RSVP.event_id == event_id,
+                                RSVP.status == "confirmed",
+                                Person.is_officer == True)
+                        .all())
+    guest_officers = (RSVPGuest.query.join(RSVP, RSVPGuest.rsvp_id == RSVP.id)
+                       .filter(RSVP.event_id == event_id,
+                               RSVP.status == "confirmed",
+                               RSVPGuest.is_officer == True)
+                       .all())
+
+    combined = []
+    for r in member_officers:
+        combined.append({"kind": "rsvp", "id": r.id, "name": r.person.display_name,
+                         "title": r.person.officer_role or "Officer", "rank": r.officer_rank})
+    for g in guest_officers:
+        combined.append({"kind": "guest", "id": g.id, "name": g.display_name,
+                         "title": g.officer_title or "Officer", "rank": g.officer_rank})
+    combined.sort(key=lambda x: (x["rank"] if x["rank"] is not None else 9999, x["name"]))
+
+    return render_template("admin/seating/officers.html", event=event, officers=combined)
+
+
 # --- HELPERS ------------------------------------------------------------------
 
 def _get_attendees(event):
