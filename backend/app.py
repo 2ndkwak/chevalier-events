@@ -110,6 +110,10 @@ def _auto_migrate():
         ("events", "paypal_link",     "VARCHAR(500)"),
         ("events", "menu_finalized",  "BOOLEAN DEFAULT 0"),
         ("events", "paypal_price_per_person", "NUMERIC(10,2)"),
+        ("rsvps", "officer_rank",       "INTEGER"),
+        ("rsvp_guests", "is_officer",    "BOOLEAN DEFAULT 0"),
+        ("rsvp_guests", "officer_title", "VARCHAR(200)"),
+        ("rsvp_guests", "officer_rank",  "INTEGER"),
     ]
     with db.engine.connect() as conn:
         for table, column, col_type in migrations:

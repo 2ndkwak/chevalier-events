@@ -214,6 +214,9 @@ class Event(db.Model):
     wine_tags       = db.relationship("WineTag", back_populates="event",
                                       cascade="all, delete-orphan",
                                       order_by="WineTag.position")
+    menu_items      = db.relationship("MenuItem", back_populates="event",
+                                      cascade="all, delete-orphan",
+                                      order_by="MenuItem.course")
     seat_assignments = db.relationship("SeatAssignment", back_populates="event",
                                       cascade="all, delete-orphan")
     allergy_offs    = db.relationship("EventAllergyOff", back_populates="event",
@@ -308,6 +311,12 @@ class RSVP(db.Model):
     linked_rsvp      = db.relationship("RSVP", remote_side="RSVP.id",
                                        foreign_keys=[linked_rsvp_id], uselist=False)
 
+    # Menu booklet officer-list print order for this event only -- the
+    # person's officer title itself (Person.officer_role) is permanent,
+    # but whether/where they print in a given booklet's officer section
+    # varies event to event.
+    officer_rank    = db.Column(db.Integer, nullable=True)
+
     created_at  = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at  = db.Column(db.DateTime, default=datetime.utcnow,
                             onupdate=datetime.utcnow)
@@ -340,6 +349,13 @@ class RSVPGuest(db.Model):
     gender      = db.Column(db.String(10))            # M | F | Other
     dietary_tags = db.relationship("DietaryTag", secondary="dietary_tag_guests",
                                    backref="guests")
+
+    # Visiting/guest officer support for the menu booklet -- e.g. a Grand
+    # Officer from another chapter who isn't in this club's own member
+    # database. Set per-event, right on the guest's RSVP entry.
+    is_officer   = db.Column(db.Boolean, default=False, nullable=False)
+    officer_title = db.Column(db.String(200))
+    officer_rank  = db.Column(db.Integer, nullable=True)
 
     rsvp        = db.relationship("RSVP", back_populates="guests")
 
@@ -413,6 +429,35 @@ class WineTag(db.Model):
 
     def __repr__(self):
         return f"<WineTag event={self.event_id} course={self.course} #{self.position} {self.domain}>"
+
+
+# --- MENU ITEMS -----------------------------------------------------------------
+# One row per dish, one dish per course -- reuses the same course numbering as
+# WineTag so a dish and its paired wine(s) share one course number, keeping
+# the two lists in sync for the menu booklet.
+
+class MenuItem(db.Model):
+    __tablename__ = "menu_items"
+
+    id            = db.Column(db.Integer, primary_key=True)
+    event_id      = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    course        = db.Column(db.Integer, nullable=False, default=1)
+
+    dish_french   = db.Column(db.Text, nullable=False)
+    dish_english  = db.Column(db.Text)
+
+    created_at    = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at    = db.Column(db.DateTime, default=datetime.utcnow,
+                              onupdate=datetime.utcnow)
+
+    event         = db.relationship("Event", back_populates="menu_items")
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "course", name="uq_menu_item_per_course"),
+    )
+
+    def __repr__(self):
+        return f"<MenuItem event={self.event_id} course={self.course}>"
 
 
 # --- EVENT ALLERGY TOGGLES -----------------------------------------------------
