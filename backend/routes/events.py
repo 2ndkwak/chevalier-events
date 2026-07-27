@@ -265,6 +265,8 @@ def edit_rsvp(event_id, rsvp_id):
                 last_name  = lname or "--",
                 suffix     = request.form.get(f"guest_{idx}_suffix", "").strip() or None,
                 gender     = request.form.get(f"guest_{idx}_gender", "").strip() or None,
+                is_officer = bool(request.form.get(f"guest_{idx}_is_officer")),
+                officer_title = request.form.get(f"guest_{idx}_officer_title", "").strip() or None,
             )
             db.session.add(guest)
             allergy_labels = request.form.get(f"guest_{idx}_allergy_tags", "").split(",")

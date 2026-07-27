@@ -1,7 +1,7 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, jsonify, current_app)
 from flask_login import login_required, current_user
-from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, EventMaterial
+from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, EventMaterial, MenuItem
 from ..routes.admin import admin_required
 import json
 import sys
@@ -936,6 +936,117 @@ def print_wine_tags(event_id):
     filename = f"WineTags_{safe_title}.pdf"
     return send_file(out.name, as_attachment=True, download_name=filename,
                      mimetype="application/pdf")
+
+
+# --- MENU ITEMS -----------------------------------------------------------------
+
+@seating_bp.route("/event/<int:event_id>/menu", methods=["GET", "POST"])
+@login_required
+@admin_required
+def menu_items(event_id):
+    """Upload/replace the menu for an event (CSV) and view the current list.
+    One dish per course, sharing the same course numbers as the wine list."""
+    import csv, io
+
+    event = Event.query.get_or_404(event_id)
+    errors = []
+
+    if request.method == "POST":
+        file = request.files.get("csv_file")
+        if not file or not file.filename:
+            errors.append("Please choose a CSV file to upload.")
+        else:
+            try:
+                raw = file.read()
+                content_str = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
+                reader = csv.DictReader(io.StringIO(content_str))
+            except Exception as e:
+                errors.append(f"Could not read file: {e}")
+                reader = None
+
+            if reader is not None:
+                required = {"course", "dish_french"}
+                fieldnames = {f.strip().lower() for f in (reader.fieldnames or [])}
+                missing = required - fieldnames
+                if missing:
+                    errors.append(f"Missing required columns: {', '.join(sorted(missing))}")
+                else:
+                    new_items = []
+                    for i, row in enumerate(reader, start=2):
+                        row = {k.strip().lower(): (v or "").strip() for k, v in row.items()}
+                        if not row.get("course"):
+                            continue  # skip blank rows silently
+                        try:
+                            course = int(row["course"])
+                        except ValueError:
+                            errors.append(f"Row {i}: course must be a number, got '{row['course']}'")
+                            continue
+                        if not row.get("dish_french"):
+                            errors.append(f"Row {i}: dish_french is required")
+                            continue
+                        new_items.append({
+                            "course": course,
+                            "dish_french": row["dish_french"],
+                            "dish_english": row.get("dish_english", "") or None,
+                        })
+
+                    if not errors:
+                        if not new_items:
+                            errors.append("No menu rows found in the file.")
+                        else:
+                            seen = set()
+                            dupes = set()
+                            for m in new_items:
+                                if m["course"] in seen:
+                                    dupes.add(m["course"])
+                                else:
+                                    seen.add(m["course"])
+                            if dupes:
+                                for course in sorted(dupes):
+                                    errors.append(
+                                        f"Course {course} appears more than once -- only one dish "
+                                        f"per course is supported."
+                                    )
+
+                    if not errors and new_items:
+                        MenuItem.query.filter_by(event_id=event_id).delete()
+                        for m in new_items:
+                            db.session.add(MenuItem(event_id=event_id, **m))
+                        db.session.commit()
+                        flash(f"Menu saved -- {len(new_items)} course(s).", "success")
+                        return redirect(url_for("seating.menu_items", event_id=event_id))
+
+    items = MenuItem.query.filter_by(event_id=event_id).order_by(MenuItem.course).all()
+    return render_template("admin/seating/menu.html",
+                           event=event, items=items, errors=errors)
+
+
+@seating_bp.route("/event/<int:event_id>/menu/template")
+@login_required
+@admin_required
+def menu_items_template(event_id):
+    """Download a blank CSV template for the menu."""
+    import csv, io
+    from flask import Response
+
+    columns = ["course", "dish_french", "dish_english"]
+    example_rows = [
+        {"course": "1", "dish_french": "Seriole, citron Meyer, fenouil, emulsion d'olives Castelvetrano, capres",
+         "dish_english": "Yellowtail, Meyer lemon, fennel, Castelvetrano olive emulsion, capers"},
+        {"course": "2", "dish_french": "Canard, champignons sauvages, fregola sarda, asperges, peche, glace au jus de canard",
+         "dish_english": "Duck, wild mushrooms, fregola sarda, asparagus, peach, duck glace"},
+    ]
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+    writer.writerows(example_rows)
+
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment; filename=menu_template.csv"}
+    )
+
 
 # --- HELPERS ------------------------------------------------------------------
 

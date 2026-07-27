@@ -71,6 +71,19 @@
                    placeholder="e.g. Gluten intolerant, Nut allergy">
           </div>
           <div class="form-group full" style="margin-top:.3rem;">
+            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--ink);">
+              <input type="checkbox" name="guest_{{ loop.index }}_is_officer" value="1"
+                     style="width:auto;" {{ 'checked' if g.is_officer else '' }}>
+              Visiting officer (for the menu booklet)
+            </label>
+          </div>
+          <div class="form-group full">
+            <label>Officer title (if applicable)</label>
+            <input type="text" name="guest_{{ loop.index }}_officer_title"
+                   value="{{ g.officer_title or '' }}"
+                   placeholder="e.g. Grand Officier, Delegue General...">
+          </div>
+          <div class="form-group full" style="margin-top:.3rem;">
             <label>Gender *</label>
             <div style="display:flex; gap:1.5rem; margin-top:.2rem;">
               <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;color:var(--ink);">
@@ -139,6 +152,17 @@
           <label>Allergy / dietary tags</label>
           <input type="text" name="guest_${idx}_allergy_tags" list="allergy_tag_options"
                  placeholder="e.g. Gluten intolerant, Nut allergy">
+        </div>
+        <div class="form-group full" style="margin-top:.3rem;">
+          <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
+            <input type="checkbox" name="guest_${idx}_is_officer" value="1" style="width:auto;">
+            Visiting officer (for the menu booklet)
+          </label>
+        </div>
+        <div class="form-group full">
+          <label>Officer title (if applicable)</label>
+          <input type="text" name="guest_${idx}_officer_title"
+                 placeholder="e.g. Grand Officier, Delegue General...">
         </div>
         <div class="form-group full" style="margin-top:.3rem;">
           <label>Gender *</label>

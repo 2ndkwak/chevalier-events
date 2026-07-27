@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Menu — {{ event.title }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Menu</h1>
+  <div style="display:flex; gap:.6rem;">
+    <a href="{{ url_for('seating.print_seating', event_id=event.id) }}" class="btn btn-outline">&larr; Back to Print / Export</a>
+  </div>
+</div>
+
+<p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:1.2rem;">{{ event.title }} &nbsp;&middot;&nbsp; {{ event.event_date.strftime('%B %d, %Y') }}</p>
+
+{% if errors %}
+<div class="card" style="border-left:4px solid var(--burgundy); margin-bottom:1.2rem;">
+  <div style="font-weight:600; color:var(--burgundy); margin-bottom:.4rem;">Couldn't save the menu:</div>
+  <ul style="margin:0; padding-left:1.2rem; color:var(--ink-muted); font-size:.9rem;">
+    {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="card" style="margin-bottom:1.2rem;">
+  <div class="card-title">Upload menu</div>
+  <p class="text-muted text-sm" style="margin-top:0;">
+    One dish per course, sharing the same course numbers as the wine list -- so each course's
+    dish and its paired wine(s) line up automatically in the menu booklet. Uploading a new file
+    replaces the current menu.
+  </p>
+  <form method="POST" enctype="multipart/form-data" style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+    <input type="file" name="csv_file" accept=".csv" required>
+    <button type="submit" class="btn btn-gold">Upload &amp; Save</button>
+    <a href="{{ url_for('seating.menu_items_template', event_id=event.id) }}" class="btn btn-outline">Download CSV template</a>
+  </form>
+  <p class="text-muted text-sm" style="margin-top:.6rem; margin-bottom:0;">
+    Columns: <code>course</code>, <code>dish_french</code>, <code>dish_english</code> (optional).
+    One row per course -- course numbers must match the wine list's course numbers.
+  </p>
+</div>
+
+{% if items %}
+<div class="card">
+  <div class="card-title">Current menu ({{ items|length }} course{{ 's' if items|length != 1 }})</div>
+  <table class="data-table">
+    <thead>
+      <tr><th>Course</th><th>Dish (French)</th><th>Dish (English)</th></tr>
+    </thead>
+    <tbody>
+      {% for m in items %}
+      <tr>
+        <td style="font-weight:700; color:var(--burgundy);">{{ m.course }}</td>
+        <td>{{ m.dish_french }}</td>
+        <td>{{ m.dish_english or '--' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="card">
+  <p class="text-muted text-sm" style="margin:0;">No menu uploaded yet. Upload a CSV above to get started.</p>
+</div>
+{% endif %}
+{% endblock %}
