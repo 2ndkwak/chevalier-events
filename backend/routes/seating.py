@@ -1,7 +1,7 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, jsonify, current_app)
 from flask_login import login_required, current_user
-from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, EventMaterial, MenuItem
+from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, EventMaterial, MenuItem, EventCourse
 from ..routes.admin import admin_required
 import json
 import sys
@@ -786,7 +786,13 @@ def wine_tags(event_id):
         else:
             try:
                 raw = file.read()
-                content = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
+                if isinstance(raw, bytes):
+                    try:
+                        content = raw.decode("utf-8-sig")
+                    except UnicodeDecodeError:
+                        content = raw.decode("cp1252")
+                else:
+                    content = raw
                 reader = csv.DictReader(io.StringIO(content))
             except Exception as e:
                 errors.append(f"Could not read file: {e}")
@@ -823,6 +829,7 @@ def wine_tags(event_id):
                             "vintage": row.get("vintage", "") or None,
                             "domain": row["domain"],
                             "appellation": row["appellation"],
+                            "label": row.get("label", "").strip() or None,
                         })
 
                     if not errors:
@@ -853,8 +860,25 @@ def wine_tags(event_id):
                     if not errors and new_wines:
                         # Replace the whole list for this event
                         WineTag.query.filter_by(event_id=event_id).delete()
+                        course_labels = {}
                         for w in new_wines:
+                            label = w.pop("label", None)
+                            if label:
+                                course_labels[w["course"]] = label
                             db.session.add(WineTag(event_id=event_id, **w))
+
+                        # Upsert course labels -- only for courses that actually had a
+                        # non-blank label in this upload, so a re-upload without the
+                        # label column never wipes out labels set previously.
+                        for course_num, label in course_labels.items():
+                            existing_label = EventCourse.query.filter_by(
+                                event_id=event_id, course=course_num).first()
+                            if existing_label:
+                                existing_label.label = label
+                            else:
+                                db.session.add(EventCourse(event_id=event_id,
+                                                           course=course_num, label=label))
+
                         db.session.commit()
                         flash(f"Wine list saved -- {len(new_wines)} wines.", "success")
                         return redirect(url_for("seating.wine_tags", event_id=event_id))
@@ -872,14 +896,14 @@ def wine_tags_template(event_id):
     import csv, io
     from flask import Response
 
-    columns = ["position", "course", "vintage", "domain", "appellation"]
+    columns = ["position", "course", "vintage", "domain", "appellation", "label"]
     example_rows = [
         {"position": "1", "course": "1", "vintage": "2019", "domain": "Domaine Leflaive",
-         "appellation": "Puligny-Montrachet, Vieilles Vignes, Premier Cru"},
+         "appellation": "Puligny-Montrachet, Vieilles Vignes, Premier Cru", "label": "Cocktail"},
         {"position": "2", "course": "1", "vintage": "2018", "domain": "Domaine de la Romanee-Conti",
-         "appellation": "Echezeaux Grand Cru, Vieilles Vignes"},
+         "appellation": "Echezeaux Grand Cru, Vieilles Vignes", "label": "Cocktail"},
         {"position": "1", "course": "2", "vintage": "2020", "domain": "Chateau Margaux",
-         "appellation": "Margaux Grand Cru Classe"},
+         "appellation": "Margaux Grand Cru Classe", "label": "Premier Assiette"},
     ]
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=columns)
@@ -958,7 +982,13 @@ def menu_items(event_id):
         else:
             try:
                 raw = file.read()
-                content_str = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
+                if isinstance(raw, bytes):
+                    try:
+                        content_str = raw.decode("utf-8-sig")
+                    except UnicodeDecodeError:
+                        content_str = raw.decode("cp1252")
+                else:
+                    content_str = raw
                 reader = csv.DictReader(io.StringIO(content_str))
             except Exception as e:
                 errors.append(f"Could not read file: {e}")

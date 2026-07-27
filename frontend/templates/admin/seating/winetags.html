@@ -32,11 +32,16 @@
     <a href="{{ url_for('seating.wine_tags_template', event_id=event.id) }}" class="btn btn-outline">Download CSV template</a>
   </form>
   <p class="text-muted text-sm" style="margin-top:.6rem; margin-bottom:0;">
-    Columns: <code>position</code>, <code>course</code>, <code>vintage</code> (optional), <code>domain</code>, <code>appellation</code>.
+    Columns: <code>position</code>, <code>course</code>, <code>vintage</code> (optional), <code>domain</code>, <code>appellation</code>, <code>label</code> (optional).
     <strong>Position is the wine's order within its own course</strong> and resets back to 1 for each new
     course -- e.g. the 1st and 2nd wines of course 1 are position 1 and 2, then the 1st wine of course 2
     is position 1 again. That combination prints right on the tag as "position/course" (e.g. "2/1" =
     2nd wine of course 1).
+  </p>
+  <p class="text-muted text-sm" style="margin-top:.4rem; margin-bottom:0;">
+    <strong>Label</strong> sets that course's heading in the menu booklet (e.g. "Cocktail",
+    "Premier Assiette", "Selection de Fromages"). Only needs to be filled in on one row per
+    course -- and only if you're using the menu booklet feature.
   </p>
 </div>
 

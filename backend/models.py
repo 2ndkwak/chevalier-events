@@ -217,6 +217,9 @@ class Event(db.Model):
     menu_items      = db.relationship("MenuItem", back_populates="event",
                                       cascade="all, delete-orphan",
                                       order_by="MenuItem.course")
+    courses         = db.relationship("EventCourse", back_populates="event",
+                                      cascade="all, delete-orphan",
+                                      order_by="EventCourse.course")
     seat_assignments = db.relationship("SeatAssignment", back_populates="event",
                                       cascade="all, delete-orphan")
     allergy_offs    = db.relationship("EventAllergyOff", back_populates="event",
@@ -458,6 +461,28 @@ class MenuItem(db.Model):
 
     def __repr__(self):
         return f"<MenuItem event={self.event_id} course={self.course}>"
+
+
+# --- COURSE LABELS ---------------------------------------------------------------
+# Free-text heading for each course number in an event's wine/menu (e.g.
+# "Cocktail", "Premier Assiette", "Selection de Fromages") -- the course
+# structure varies event to event, so this is per-event rather than a fixed
+# lookup. Set from the optional "label" column on the wine list CSV only;
+# the menu CSV doesn't repeat it, to avoid asking for the same thing twice.
+
+class EventCourse(db.Model):
+    __tablename__ = "event_courses"
+
+    id       = db.Column(db.Integer, primary_key=True)
+    event_id = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    course   = db.Column(db.Integer, nullable=False)
+    label    = db.Column(db.String(100), nullable=False)
+
+    event    = db.relationship("Event", back_populates="courses")
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "course", name="uq_event_course_label"),
+    )
 
 
 # --- EVENT ALLERGY TOGGLES -----------------------------------------------------
