@@ -19,7 +19,7 @@ def list_members():
     ftype  = request.args.get("type", "all")   # all | member | partner
     sort   = request.args.get("sort", "last_name")
 
-    query = Person.query.filter(Person.person_type.in_(["member", "honoraire", "aspirant", "partner"]))
+    query = Person.query.filter(Person.person_type.in_(['member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier']))
 
     if q:
         like = f"%{q}%"
@@ -29,7 +29,7 @@ def list_members():
                    Person.email.ilike(like),
                    Person.officer_role.ilike(like))
         )
-    if ftype in ("member", "honoraire", "aspirant", "partner"):
+    if ftype in ('member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier'):
         query = query.filter_by(person_type=ftype)
 
     if sort == "first_name":
@@ -359,7 +359,7 @@ def _person_from_form(person, form):
 
 def _linkable_persons(exclude):
     """All members and partners who could be linked as a partner."""
-    q = Person.query.filter(Person.person_type.in_(["member", "honoraire", "aspirant", "partner"]))
+    q = Person.query.filter(Person.person_type.in_(['member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier']))
     if exclude and exclude.id:
         q = q.filter(Person.id != exclude.id)
     return q.order_by(Person.last_name, Person.first_name).all()
@@ -518,16 +518,16 @@ def members_pdf():
         f"Member List -- {datetime.now().strftime('%B %d, %Y')}", sub_style))
     story.append(HRFlowable(width="100%", thickness=2, color=BURGUNDY, spaceAfter=12))
 
-    # Groups
+    # Groups -- Chevaliers includes partner_member_chevalier, since she's a
+    # full member of our commanderie in her own right, not just linked to one.
     groups = [
-        ("Chevaliers",         "member"),
-        ("Members Honoraire",  "honoraire"),
-        ("Aspirants",          "aspirant"),
-
+        ("Chevaliers",         ("member", "partner_member_chevalier")),
+        ("Members Honoraire",  ("honoraire",)),
+        ("Aspirants",          ("aspirant",)),
     ]
 
     all_persons = Person.query.filter(
-        Person.person_type.in_(["member","honoraire","aspirant","partner"])
+        Person.person_type.in_(['member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier'])
     ).order_by(Person.last_name, Person.first_name).all()
 
     heading_style = ParagraphStyle("heading",
@@ -540,8 +540,8 @@ def members_pdf():
 
     col_widths = [2.0*inch, 1.5*inch, 1.0*inch, 1.5*inch, 1.0*inch]
 
-    for group_label, group_type in groups:
-        members = [p for p in all_persons if p.person_type == group_type]
+    for group_label, group_types in groups:
+        members = [p for p in all_persons if p.person_type in group_types]
         if not members:
             continue
 
@@ -578,16 +578,19 @@ def members_pdf():
                 Paragraph(role or "--", small_style),
                 Paragraph("" , small_style),
             ])
-            # Partner row indented below
-            if p.partner:
+            # Partner row indented below -- only if the partner doesn't
+            # already have their own top-level row somewhere in this listing
+            # (member/honoraire/aspirant/partner_member_chevalier all do).
+            if p.partner and p.partner.person_type in ("partner", "partner_non_member_chevalier"):
                 partner_name_style = ParagraphStyle("pname",
                     fontName="Times-Italic", fontSize=8.5,
                     textColor=MUTED, leading=12, leftIndent=10)
+                partner_role = "Chevalier" if p.partner.person_type == "partner_non_member_chevalier" else "partner"
                 rows.append([
                     Paragraph("+ " + p.partner.display_name, partner_name_style),
                     Paragraph(p.partner.email or "--", small_style),
                     Paragraph(p.partner.phone or "--", small_style),
-                    Paragraph("partner", small_style),
+                    Paragraph(partner_role, small_style),
                     Paragraph("", small_style),
                 ])
 

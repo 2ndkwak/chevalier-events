@@ -25,6 +25,8 @@
       <option value="honoraire" {% if ftype=='honoraire' %}selected{% endif %}>Membres Honoraires only</option>
       <option value="aspirant"  {% if ftype=='aspirant'  %}selected{% endif %}>Aspirants only</option>
       <option value="partner"   {% if ftype=='partner'   %}selected{% endif %}>Partners only</option>
+      <option value="partner_member_chevalier"     {% if ftype=='partner_member_chevalier'     %}selected{% endif %}>Partner Member Chevaliers only</option>
+      <option value="partner_non_member_chevalier" {% if ftype=='partner_non_member_chevalier' %}selected{% endif %}>Partner Non-Member Chevaliers only</option>
     </select>
     <select name="sort" style="max-width:160px;">
       <option value="last_name"  {% if sort=='last_name'  %}selected{% endif %}>Sort by last name</option>
@@ -37,13 +39,13 @@
 
   {% if persons %}
     {% set member_groups = [
-        ('Chevaliers',        'member'),
-        ('Members Honoraire','honoraire'),
-        ('Aspirants',         'aspirant'),
+        ('Chevaliers',        ['member', 'partner_member_chevalier']),
+        ('Members Honoraire', ['honoraire']),
+        ('Aspirants',         ['aspirant']),
     ] %}
 
-    {% for group_label, group_type in member_groups %}
-      {% set group = persons | selectattr('person_type','eq',group_type) | list %}
+    {% for group_label, group_types in member_groups %}
+      {% set group = persons | selectattr('person_type','in',group_types) | list %}
       {% if group %}
       <div style="margin-bottom:1.5rem;">
         <div style="font-family:sans-serif; font-size:.72rem; font-weight:700;
@@ -87,15 +89,19 @@
                    class="btn btn-outline btn-sm">Edit</a>
               </td>
             </tr>
-            {# Partner row — indented directly below #}
-            {% if p.partner %}
+            {# Partner row — indented directly below. Only shown if the
+               partner doesn't already have their own top-level row
+               elsewhere in this listing (avoids double-listing a couple
+               who are both independently Chevaliers/Honoraire/Aspirant/
+               partner_member_chevalier). #}
+            {% if p.partner and p.partner.person_type in ('partner', 'partner_non_member_chevalier') %}
             <tr style="background:var(--parchment);">
               <td style="padding-left:1.8rem; font-size:.85rem;">
                 <span style="color:var(--ink-muted); margin-right:.3rem;">+</span>
                 <a href="{{ url_for('members.edit_member', person_id=p.partner.id) }}"
                    style="color:var(--ink-muted);">{{ p.partner.display_name }}</a>
               </td>
-              <td><span class="text-muted" style="font-size:.8rem;">partner</span></td>
+              <td><span class="text-muted" style="font-size:.8rem;">{{ 'Chevalier' if p.partner.person_type == 'partner_non_member_chevalier' else 'partner' }}</span></td>
               <td class="text-sm text-muted">{{ p.partner.email or '--' }}</td>
               <td class="text-sm text-muted">{{ p.partner.phone or '--' }}</td>
               <td>
