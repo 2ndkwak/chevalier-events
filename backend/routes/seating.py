@@ -1161,29 +1161,51 @@ def officer_ranking(event_id):
 
 # --- MENU BOOKLET --------------------------------------------------------------
 
+def _booklet_title_for(person):
+    """The title text (if any) that prints in front of this person's name
+    on the booklet -- red, per the confirmed color convention. Single
+    source of truth used both for a person's own line and for how they
+    print when shown as someone else's partner, so the two never disagree.
+    Both partner-Chevalier types print as plain "Chevalier" -- the booklet
+    doesn't distinguish member vs. non-member Chevaliers."""
+    title_map = {
+        "member": "Chevalier",
+        "partner_member_chevalier": "Chevalier",
+        "partner_non_member_chevalier": "Chevalier",
+        "honoraire": None,
+        "aspirant": "Aspirant",
+        "partner": None,
+    }
+    title = title_map.get(person.person_type)
+    # Honoraires use their personal title (e.g. "Chef") instead of the
+    # word "Honoraire" itself, same whether shown on their own line or as
+    # someone else's partner.
+    if person.person_type == "honoraire" and person.title:
+        title = person.title
+    return title
+
+
 def _honorific_and_title(partner):
     """For a confirmed partner shown alongside a primary attendee: their
-    Mme./M. honorific (by gender) and, if they independently hold their
-    own membership title, that title too (e.g. "Chevalier" -- printed red,
-    same as any other title)."""
+    Mme./M. honorific (by gender) and their title, if any (via
+    _booklet_title_for, so this always matches what they'd show on their
+    own line)."""
     honorific = None
     if partner.gender == "F":
         honorific = "Mme."
     elif partner.gender == "M":
         honorific = "M."
-    title_map = {"member": "Chevalier", "honoraire": None, "aspirant": "Aspirant"}
-    title = title_map.get(partner.person_type)
-    # Honoraire partners use their personal title (e.g. "Chef"), same as
-    # the Honoraire section itself, rather than the word "Honoraire".
-    if partner.person_type == "honoraire" and partner.title:
-        title = partner.title
-    return honorific, title
+    return honorific, _booklet_title_for(partner)
 
 
-def _person_section_lines(people, confirmed_person_ids, paired_ids, category_title):
+def _person_section_lines(people, confirmed_person_ids, paired_ids):
     """Builds attendee lines for one section (Chevaliers/Honoraire/Aspirants),
     pairing with a confirmed partner where applicable and skipping anyone
-    already shown as someone else's partner."""
+    already shown as someone else's partner. Each person's title is looked
+    up from their own person_type via _booklet_title_for, so this works
+    uniformly whether the section is Les Chevaliers (which now pools
+    members, plain partners, and both partner-Chevalier types together),
+    Honoraire, or Aspirants."""
     import os as _os, sys as _sys
     project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
     if project_root not in _sys.path:
@@ -1194,9 +1216,7 @@ def _person_section_lines(people, confirmed_person_ids, paired_ids, category_tit
     for p in sorted(people, key=lambda x: ((x.last_name or "").lower(), (x.first_name or "").lower())):
         if p.id in paired_ids:
             continue
-        primary_title = category_title
-        if p.person_type == "honoraire" and p.title:
-            primary_title = p.title
+        primary_title = _booklet_title_for(p)
         partner_honorific = partner_title = partner_name = None
         if p.partner_id:
             partner = Person.query.get(p.partner_id)
@@ -1254,16 +1274,22 @@ def build_booklet_data(event):
             officers.append(_gmb.attendee_line_markup(obj.officer_title or "Officier", obj.display_name))
 
     # -- Members / Honoraires / Aspirants (non-officers only) --
+    # Les Chevaliers pool: our own members, plus any partner-variant type
+    # (plain partner, partner_member_chevalier, partner_non_member_chevalier)
+    # -- this is what lets a partner who attends WITHOUT their Cleveland-
+    # member spouse still show up with the correct title (or no title, for
+    # a plain partner), rather than only appearing when paired.
+    chevalier_pool_types = ("member", "partner", "partner_member_chevalier", "partner_non_member_chevalier")
     members_people = [r.person for r in confirmed_rsvps
-                      if r.person.person_type == "member" and not r.person.is_officer]
+                      if r.person.person_type in chevalier_pool_types and not r.person.is_officer]
     honoraire_people = [r.person for r in confirmed_rsvps
                         if r.person.person_type == "honoraire" and not r.person.is_officer]
     aspirant_people = [r.person for r in confirmed_rsvps
                        if r.person.person_type == "aspirant" and not r.person.is_officer]
 
-    members = _person_section_lines(members_people, confirmed_person_ids, paired_ids, "Chevalier")
-    honoraires = _person_section_lines(honoraire_people, confirmed_person_ids, paired_ids, None)
-    aspirants = _person_section_lines(aspirant_people, confirmed_person_ids, paired_ids, "Aspirant")
+    members = _person_section_lines(members_people, confirmed_person_ids, paired_ids)
+    honoraires = _person_section_lines(honoraire_people, confirmed_person_ids, paired_ids)
+    aspirants = _person_section_lines(aspirant_people, confirmed_person_ids, paired_ids)
 
     # -- Guests, grouped by host, excluding those marked as officers (shown above instead) --
     guests_by_host = {}
