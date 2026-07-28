@@ -20,7 +20,9 @@
           <option value="member"     {% if not person or person.person_type=='member'     %}selected{% endif %}>Chevalier</option>
           <option value="honoraire"  {% if person and person.person_type=='honoraire'  %}selected{% endif %}>Membre Honoraire</option>
           <option value="aspirant"   {% if person and person.person_type=='aspirant'   %}selected{% endif %}>Aspirant</option>
-          <option value="partner"    {% if person and person.person_type=='partner'    %}selected{% endif %}>Non-member partner</option>
+          <option value="partner"    {% if person and person.person_type=='partner'    %}selected{% endif %}>Partner</option>
+          <option value="partner_member_chevalier"     {% if person and person.person_type=='partner_member_chevalier'     %}selected{% endif %}>Partner Member Chevalier</option>
+          <option value="partner_non_member_chevalier" {% if person and person.person_type=='partner_non_member_chevalier' %}selected{% endif %}>Partner Non-Member Chevalier</option>
         </select>
       </div>
       <div class="form-group">

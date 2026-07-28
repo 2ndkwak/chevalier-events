@@ -27,13 +27,25 @@ def dashboard():
                         Event.event_date >= f"{today}")
                 .order_by(Event.event_date.asc())
                 .limit(5).all())
-    total_members   = Person.query.filter_by(person_type="member").count()
+    # "Members of the Sous Commanderie" includes partner_member_chevalier --
+    # a spouse who is herself a full member and Chevalier of our commanderie,
+    # not just linked to one. She's counted here ONLY (never also as a
+    # Partner below), so each real person is counted exactly once toward
+    # the "people involved in our Sous Commanderie" total.
+    member_types = ("member", "partner_member_chevalier")
+    total_members   = Person.query.filter(Person.person_type.in_(member_types)).count()
     total_honoraire = Person.query.filter_by(person_type="honoraire").count()
     total_aspirants = Person.query.filter_by(person_type="aspirant").count()
+
+    # Partners: plain partners and non-member-Chevalier partners, counted
+    # only when their spouse is one of our own members (person_type in
+    # member_types) -- an Honoraire's or Aspirant's spouse isn't counted
+    # here, and partner_member_chevalier herself is excluded (she's already
+    # counted as a Member above, not double-counted as her own partner).
     total_partners  = Person.query.filter(
-        Person.person_type == "partner",
+        Person.person_type.in_(("partner", "partner_non_member_chevalier")),
         Person.partner_id.in_(
-            Person.query.with_entities(Person.id).filter_by(person_type="member")
+            Person.query.with_entities(Person.id).filter(Person.person_type.in_(member_types))
         )
     ).count()
 
