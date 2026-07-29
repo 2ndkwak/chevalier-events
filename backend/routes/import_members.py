@@ -8,6 +8,11 @@ from datetime import date
 
 import_bp = Blueprint("import_members", __name__)
 
+VALID_PERSON_TYPES = {
+    "member", "honoraire", "aspirant",
+    "partner", "partner_member_chevalier", "partner_non_member_chevalier",
+}
+
 
 @import_bp.route("/", methods=["GET", "POST"])
 @login_required
@@ -94,6 +99,12 @@ def _parse_csv(source):
             "member_since":   None,
             "_row":           i,
         }
+
+        if entry["person_type"] not in VALID_PERSON_TYPES:
+            errors.append(
+                f"Row {i}: '{row.get('person_type', '')}' is not a recognized person_type "
+                f"-- expected one of: {', '.join(sorted(VALID_PERSON_TYPES))}"
+            )
 
         ms = row.get("member_since", "").strip()
         if ms:

@@ -52,7 +52,7 @@
     </thead>
     <tbody>
       {% for col, req, note in [
-        ('person_type',   'No',  'member or partner — defaults to member'),
+        ('person_type',   'No',  'member, honoraire, aspirant, partner, partner_member_chevalier, or partner_non_member_chevalier — defaults to member'),
         ('title',         'No',  'Dr., Count, Sir, Countess…'),
         ('first_name',    'Yes', ''),
         ('last_name',     'Yes', ''),
@@ -115,7 +115,7 @@
             {{ r.title or '' }} {{ r.first_name }} {{ r.last_name }}{{ ', ' + r.suffix if r.suffix else '' }}
           </td>
           <td><span class="badge {% if r.person_type=='member' %}badge-burg{% else %}badge-muted{% endif %}">
-            {{ r.person_type }}</span></td>
+            {{ r.person_type | person_type_label }}</span></td>
           <td>{{ r.gender or '—' }}</td>
           <td class="text-muted">{{ r.email or '—' }}</td>
           <td>
