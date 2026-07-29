@@ -101,9 +101,9 @@
       {% for item in roster_changes %}
       <div class="text-sm" style="margin-bottom:.25rem;">
         {% if item.kind == "added" %}
-        {{ item.person.display_name }} added as {{ item.person.person_type }}
+        {{ item.person.display_name }} added as {{ item.person.person_type | person_type_label }}
         {% else %}
-        {{ item.person.display_name }}'s membership type changed to {{ item.person.person_type }}
+        {{ item.person.display_name }}'s membership type changed to {{ item.person.person_type | person_type_label }}
         {% endif %}
         <span class="text-muted">({{ item.when.strftime("%b %d") }})</span>
       </div>

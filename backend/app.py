@@ -6,6 +6,17 @@ from flask_mail import Mail
 login_manager = LoginManager()
 mail = Mail()
 
+# Friendly labels for the person_type column, used anywhere a raw value
+# would otherwise be shown to a user (e.g. the dashboard's recent-changes list).
+PERSON_TYPE_LABELS = {
+    "member":                       "Chevalier",
+    "honoraire":                    "Membre Honoraire",
+    "aspirant":                     "Aspirant",
+    "partner":                      "Partner",
+    "partner_member_chevalier":     "Partner Member Chevalier",
+    "partner_non_member_chevalier": "Partner Non-Member Chevalier",
+}
+
 def create_app(config=None):
     app = Flask(__name__,
                 template_folder="../frontend/templates",
@@ -80,6 +91,7 @@ def create_app(config=None):
     import math
     app.jinja_env.filters["cos_deg"] = lambda d: math.cos(math.radians(float(d)))
     app.jinja_env.filters["sin_deg"] = lambda d: math.sin(math.radians(float(d)))
+    app.jinja_env.filters["person_type_label"] = lambda v: PERSON_TYPE_LABELS.get(v, v)
 
     # -- Create tables on first run ------------------------------------------
     with app.app_context():
