@@ -237,6 +237,13 @@
     quill.clipboard.dangerouslyPasteHTML(defaultText);
   }
 
+  // Quill's dangerouslyPasteHTML moves the cursor into the pasted content,
+  // and the browser auto-scrolls that focused element into view. Reset the
+  // scroll position back to the top once that settles.
+  requestAnimationFrame(function() {
+    window.scrollTo(0, 0);
+  });
+
   // Copy HTML into hidden input on submit
   document.getElementById("event-form").addEventListener("submit", function() {
     document.getElementById("description").value = quill.root.innerHTML;
