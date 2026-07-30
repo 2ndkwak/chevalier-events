@@ -1493,14 +1493,24 @@ def _get_event_couples(event):
                 seen.add(pair)
                 partner = Person.query.get(p.partner_id)
                 if partner:
+                    # Deterministic ordering: always the alphabetically-first
+                    # last name leads the label, regardless of which of the
+                    # two happened to come first in this unordered query --
+                    # otherwise the same couple could sort under either
+                    # partner's last name from one page load to the next.
+                    first, second = (
+                        (p, partner)
+                        if (p.last_name or "").lower() <= (partner.last_name or "").lower()
+                        else (partner, p)
+                    )
                     couples.append({
-                        "id":           p.id,
-                        "name":         p.display_name,
-                        "partner_id":   partner.id,
-                        "partner_name": partner.display_name,
-                        "couple_label": f"{p.last_name} / {partner.last_name}"
-                                        if p.last_name != partner.last_name
-                                        else f"{p.display_name} & {partner.display_name}",
+                        "id":           first.id,
+                        "name":         first.display_name,
+                        "partner_id":   second.id,
+                        "partner_name": second.display_name,
+                        "couple_label": f"{first.last_name} / {second.last_name}"
+                                        if first.last_name != second.last_name
+                                        else f"{first.display_name} & {second.display_name}",
                     })
 
     # Singles: confirmed attendees with no linked partner at all. Without
