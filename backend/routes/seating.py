@@ -455,6 +455,8 @@ def propose_seating_fast(event_id):
             details.append(f"{fixes['officers_spread']} officer(s) redistributed across tables")
         if fixes.get("not_together_fixed", 0) > 0:
             details.append(f"{fixes['not_together_fixed']} \"do not seat together\" conflict(s) resolved")
+        if fixes.get("gender_improved", 0) > 0:
+            details.append(f"{fixes['gender_improved']} seat(s) rearranged to alternate gender")
         if details:
             msg += " (Auto-fixed: " + "; ".join(details) + ".)"
         flash(msg, "success")
@@ -2281,232 +2283,112 @@ def _apply_proposal(event_id, proposal, locked):
 
 def _enforce_rules(event_id, couples_data):
     """
-    Post-generation enforcement pass.
-    Runs after the AI proposal is saved and fixes:
-      1. Couples seated in adjacent seats (seat numbers differing by 1)
-      2. Officers bunched at one table (more than 1 officer per table
+    Post-generation enforcement pass. Runs after the AI proposal is saved
+    and fixes, in this order:
+      1. Officers bunched at one table (more than 1 officer per table
          when spreading is possible)
+      2. "Do not seat together" pairs who ended up at the same table
+      3. Couple adjacency and gender alternation, jointly -- run LAST
+         since neither step above is aware of seat-level adjacency or
+         gender at all, and could otherwise silently undo this step's
+         work if it ran earlier.
     Returns a dict with counts of fixes applied.
     """
-    fixes = {"couples_separated": 0, "officers_spread": 0}
+    fixes = {"officers_spread": 0, "not_together_fixed": 0,
+             "not_together_unresolved": 0, "couples_separated": 0,
+             "gender_improved": 0}
 
     # -- Load current assignments ----------------------------------------------
     all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
     if not all_sa:
         return fixes
 
-    # Build table ? list of SeatAssignment
     tables: dict[int, list] = {}
     for sa in all_sa:
         tables.setdefault(sa.table_num, []).append(sa)
-
-    # pid ? SeatAssignment for quick lookup
     pid_to_sa: dict[int, object] = {sa.person_id: sa for sa in all_sa if sa.person_id}
 
-    # -- 1. Fix adjacent couples -----------------------------------------------
-    for couple in couples_data:
-        pid1 = couple["id"]
-        pid2 = couple["partner_id"]
-        sa1 = pid_to_sa.get(pid1)
-        sa2 = pid_to_sa.get(pid2)
-        if not sa1 or not sa2:
-            continue
-        # Must be same table and adjacent seat numbers
-        if sa1.table_num != sa2.table_num:
-            continue  # different table is fine (shouldn't happen, but skip)
-        if abs(sa1.seat_num - sa2.seat_num) != 1:
-            continue  # not adjacent -- already OK
-
-        # They're adjacent. Find another non-locked seat on the same table
-        # that is not adjacent to the partner's seat, and swap sa1 into it.
-        table_sas = tables[sa1.table_num]
-        partner_seat = sa2.seat_num  # keep sa2 fixed, move sa1
-
-        # Candidate seats: other non-locked assignments on the same table
-        # (we swap sa1 with another person on the same table)
-        swapped = False
-        for candidate in table_sas:
-            if candidate.person_id == pid1:
-                continue  # that's sa1 itself
-            if candidate.person_id == pid2:
-                continue  # that's sa1's own partner -- swapping with them fixes nothing
-            if candidate.is_locked:
-                continue
-            cand_seat = candidate.seat_num
-            # Check: after swap, sa1 would be at cand_seat -- not adjacent to partner_seat
-            if abs(cand_seat - partner_seat) == 1:
-                continue  # still adjacent after swap
-            # Also check: candidate's new seat (sa1.seat_num) not adjacent to their own partner
-            cand_partner_sa = None
-            if candidate.person_id:
-                cand_person = Person.query.get(candidate.person_id)
-                if cand_person and cand_person.partner_id:
-                    cand_partner_sa = pid_to_sa.get(cand_person.partner_id)
-            new_cand_seat = sa1.seat_num
-            if cand_partner_sa and cand_partner_sa.table_num == sa1.table_num:
-                if abs(new_cand_seat - cand_partner_sa.seat_num) == 1:
-                    continue  # would create adjacency for the candidate's couple
-
-            # Perform the swap via a temporary placeholder seat number, with
-            # a flush after EACH individual change -- not just a Python
-            # tuple-swap, which only changes both attributes in memory
-            # before ever touching the database, then leaves SQLAlchemy to
-            # decide what order to send the two UPDATEs in. That order
-            # isn't guaranteed, and if it sends "move sa1 into candidate's
-            # seat" before "move candidate out of it", the two rows briefly
-            # collide on the same seat and the uniqueness constraint
-            # correctly rejects it. Flushing after each individual step
-            # removes any ambiguity about ordering.
-            original_sa1_seat = sa1.seat_num
-            sa1.seat_num = -1  # placeholder, guaranteed not to collide
-            db.session.flush()
-            candidate.seat_num = original_sa1_seat  # move candidate into sa1's old (now free) seat
-            db.session.flush()
-            sa1.seat_num = cand_seat  # move sa1 into candidate's old (now free) seat
-            db.session.flush()
-            fixes["couples_separated"] += 1
-            swapped = True
-            break
-
-        if not swapped:
-            # No swap partner found on same table -- try bumping sa1 by 2 seats
-            # if that seat is empty (no assignment there yet)
-            occupied_seats = {sa.seat_num for sa in table_sas}
-            event = Event.query.get(event_id)
-            table_cfg = next((t for t in (event.table_config or {}).get("tables", [])
-                              if t["id"] == sa1.table_num), None)
-            table_size = table_cfg["size"] if table_cfg else 12
-            for delta in [2, -2, 3, -3]:
-                new_seat = partner_seat + delta
-                if 1 <= new_seat <= table_size and new_seat not in occupied_seats:
-                    sa1.seat_num = new_seat
-                    occupied_seats.add(new_seat)
-                    fixes["couples_separated"] += 1
-                    break
-
-    db.session.flush()
-
-    # -- 2. Spread officers ----------------------------------------------------
-    # Reload after couple fixes
-    all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
-    pid_to_sa = {sa.person_id: sa for sa in all_sa if sa.person_id}
-    tables = {}
-    for sa in all_sa:
-        tables.setdefault(sa.table_num, []).append(sa)
-
+    # -- 1. Spread officers ------------------------------------------------------
     num_tables = len(tables)
-    if num_tables < 2:
-        db.session.commit()
-        return fixes
+    if num_tables >= 2:
+        def officer_count(tnum):
+            return sum(1 for sa in tables.get(tnum, [])
+                       if sa.person_id and Person.query.get(sa.person_id) and
+                       Person.query.get(sa.person_id).is_officer)
 
-    def officer_count(tnum):
-        return sum(1 for sa in tables.get(tnum, [])
-                   if sa.person_id and Person.query.get(sa.person_id) and
-                   Person.query.get(sa.person_id).is_officer)
+        max_passes = 10
+        for _ in range(max_passes):
+            overcrowded = [t for t in tables if officer_count(t) > 1]
+            empty_tables = [t for t in tables if officer_count(t) == 0]
+            if not overcrowded or not empty_tables:
+                break
 
-    # Find tables with 2+ officers and tables with 0 officers
-    max_passes = 10
-    for _ in range(max_passes):
-        overcrowded = [t for t in tables if officer_count(t) > 1]
-        empty_tables = [t for t in tables if officer_count(t) == 0]
-        if not overcrowded or not empty_tables:
-            break
+            tnum_from = overcrowded[0]
+            tnum_to   = empty_tables[0]
 
-        tnum_from = overcrowded[0]
-        tnum_to   = empty_tables[0]
+            def _has_partner_here(sa):
+                person = Person.query.get(sa.person_id)
+                if not person or not person.partner_id:
+                    return False
+                partner_sa = pid_to_sa.get(person.partner_id)
+                return partner_sa is not None and partner_sa.table_num == tnum_from
 
-        # Pick an unlocked officer from tnum_from to move to tnum_to --
-        # but never one whose partner is ALSO seated at this same table.
-        # This logic only knows about balancing officer counts across
-        # tables; it has no awareness of the "couples stay together" rule
-        # on its own, and moving an officer without checking that first
-        # would silently split them from their partner, who'd be left
-        # behind at the old table.
-        def _has_partner_here(sa):
-            person = Person.query.get(sa.person_id)
-            if not person or not person.partner_id:
-                return False
-            partner_sa = pid_to_sa.get(person.partner_id)
-            return partner_sa is not None and partner_sa.table_num == tnum_from
+            officer_sa = next(
+                (sa for sa in tables[tnum_from]
+                 if not sa.is_locked and sa.person_id and
+                 Person.query.get(sa.person_id) and
+                 Person.query.get(sa.person_id).is_officer and
+                 not _has_partner_here(sa)),
+                None
+            )
+            if not officer_sa:
+                break
 
-        officer_sa = next(
-            (sa for sa in tables[tnum_from]
-             if not sa.is_locked and sa.person_id and
-             Person.query.get(sa.person_id) and
-             Person.query.get(sa.person_id).is_officer and
-             not _has_partner_here(sa)),
-            None
-        )
-        if not officer_sa:
-            break
+            def _target_has_partner_here(sa):
+                person = Person.query.get(sa.person_id)
+                if not person or not person.partner_id:
+                    return False
+                partner_sa = pid_to_sa.get(person.partner_id)
+                return partner_sa is not None and partner_sa.table_num == tnum_to
 
-        # Find a non-officer, non-locked person on tnum_to to swap with --
-        # same protection as officer_sa above: never pick someone whose own
-        # partner is also seated at tnum_to, or swapping them out would
-        # split THAT couple instead.
-        def _target_has_partner_here(sa):
-            person = Person.query.get(sa.person_id)
-            if not person or not person.partner_id:
-                return False
-            partner_sa = pid_to_sa.get(person.partner_id)
-            return partner_sa is not None and partner_sa.table_num == tnum_to
+            swap_target = next(
+                (sa for sa in tables[tnum_to]
+                 if not sa.is_locked and sa.person_id and
+                 not Person.query.get(sa.person_id).is_officer and
+                 not _target_has_partner_here(sa)),
+                None
+            )
+            if not swap_target:
+                old_tnum = officer_sa.table_num
+                occupied_to = {sa.seat_num for sa in tables[tnum_to]}
+                event = Event.query.get(event_id)
+                table_cfg = next((t for t in (event.table_config or {}).get("tables", [])
+                                  if t["id"] == tnum_to), None)
+                table_size = table_cfg["size"] if table_cfg else 12
+                for snum in range(1, table_size + 1):
+                    if snum not in occupied_to:
+                        officer_sa.table_num = tnum_to
+                        officer_sa.seat_num = snum
+                        fixes["officers_spread"] += 1
+                        break
+            else:
+                orig_table, orig_seat = officer_sa.table_num, officer_sa.seat_num
+                target_table, target_seat = swap_target.table_num, swap_target.seat_num
+                officer_sa.table_num, officer_sa.seat_num = -1, -1
+                db.session.flush()
+                swap_target.table_num, swap_target.seat_num = orig_table, orig_seat
+                db.session.flush()
+                officer_sa.table_num, officer_sa.seat_num = target_table, target_seat
+                db.session.flush()
+                fixes["officers_spread"] += 1
 
-        swap_target = next(
-            (sa for sa in tables[tnum_to]
-             if not sa.is_locked and sa.person_id and
-             not Person.query.get(sa.person_id).is_officer and
-             not _target_has_partner_here(sa)),
-            None
-        )
-        if not swap_target:
-            # No swap partner -- just reassign table number
-            old_tnum = officer_sa.table_num
-            # Find a free seat on tnum_to
-            occupied_to = {sa.seat_num for sa in tables[tnum_to]}
-            event = Event.query.get(event_id)
-            table_cfg = next((t for t in (event.table_config or {}).get("tables", [])
-                              if t["id"] == tnum_to), None)
-            table_size = table_cfg["size"] if table_cfg else 12
-            for snum in range(1, table_size + 1):
-                if snum not in occupied_to:
-                    officer_sa.table_num = tnum_to
-                    officer_sa.seat_num = snum
-                    fixes["officers_spread"] += 1
-                    break
-        else:
-            # Swap table assignments via a temporary placeholder -- a bare
-            # Python tuple-swap here would issue sequential SQL UPDATEs that
-            # can transiently collide with the (event_id, table_num,
-            # seat_num) uniqueness constraint, the same issue already fixed
-            # for the couples-separation swap earlier in this function.
-            # Same fix here: flush after EACH individual change rather than
-            # changing both rows in memory and letting SQLAlchemy pick the
-            # order it sends the two UPDATEs in.
-            orig_table, orig_seat = officer_sa.table_num, officer_sa.seat_num
-            target_table, target_seat = swap_target.table_num, swap_target.seat_num
-            officer_sa.table_num, officer_sa.seat_num = -1, -1  # placeholder, guaranteed not to collide
             db.session.flush()
-            swap_target.table_num, swap_target.seat_num = orig_table, orig_seat  # into officer_sa's old (now free) seat
-            db.session.flush()
-            officer_sa.table_num, officer_sa.seat_num = target_table, target_seat  # into swap_target's old (now free) seat
-            db.session.flush()
-            fixes["officers_spread"] += 1
+            all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
+            tables = {}
+            for sa in all_sa:
+                tables.setdefault(sa.table_num, []).append(sa)
 
-        # Refresh table map
-        db.session.flush()
-        all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
-        tables = {}
-        for sa in all_sa:
-            tables.setdefault(sa.table_num, []).append(sa)
-
-    # -- 3. Fix "do not seat together" violations -------------------------------
-    # Checked last, against the truly final table assignments -- nothing
-    # upstream in this pass re-checks against this rule after moving anyone,
-    # so if it ran earlier it could get silently undone by the officer-spread
-    # step above. Only ever moves someone who isn't currently seated with
-    # their own partner; if both people in a violating pair are seated with
-    # their partner, this leaves it alone and reports it as unresolved
-    # rather than attempting the bigger, riskier job of relocating a couple.
+    # -- 2. Fix "do not seat together" violations --------------------------------
     all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
     pid_to_sa = {sa.person_id: sa for sa in all_sa if sa.person_id}
     tables = {}
@@ -2516,9 +2398,6 @@ def _enforce_rules(event_id, couples_data):
     event = Event.query.get(event_id)
     not_together_pairs = (event.seating_rules or {}).get("not_together") or []
     table_sizes = {t["id"]: t["size"] for t in (event.table_config or {}).get("tables", [])}
-
-    fixes["not_together_fixed"] = 0
-    fixes["not_together_unresolved"] = 0
 
     def _seated_with_partner(sa):
         person = Person.query.get(sa.person_id)
@@ -2531,9 +2410,9 @@ def _enforce_rules(event_id, couples_data):
         sa_a = pid_to_sa.get(a_id)
         sa_b = pid_to_sa.get(b_id)
         if not sa_a or not sa_b:
-            continue  # one or both aren't attending this event
+            continue
         if sa_a.table_num != sa_b.table_num:
-            continue  # already fine
+            continue
 
         mover = None
         if not sa_a.is_locked and not _seated_with_partner(sa_a):
@@ -2567,6 +2446,122 @@ def _enforce_rules(event_id, couples_data):
 
         if not moved:
             fixes["not_together_unresolved"] += 1
+
+    db.session.flush()
+
+    # -- 3. Jointly optimize couple-adjacency and gender alternation ------------
+    # Runs last, after officer-spread and the not-together fix, so it has the
+    # final word and can clean up any adjacency/gender fallout either of those
+    # leaves behind (neither is aware of seat-level adjacency at all). For
+    # each table, repeatedly looks for the single best swap between two
+    # non-locked occupants -- automating the same thing done by eye on a
+    # finished table: scan it, try a move, see if it helps. Couple-adjacency
+    # always takes priority -- a swap is only ever accepted if it doesn't
+    # increase the number of adjacent couples, even when it would improve
+    # gender alternation. Only ever swaps seats within the same table; never
+    # relocates anyone to a different table.
+    #
+    # IMPORTANT: gender is looked up once, up front, into a plain dict --
+    # never inside the trial-swap loop below. Evaluating a trial swap
+    # temporarily gives two seat assignments the same (table, seat) in
+    # memory before it's reverted; any ORM query during that window (e.g.
+    # Person.query.get(), as this used to call via _lookup_gender) triggers
+    # SQLAlchemy's autoflush and tries to persist that momentarily-invalid
+    # state, which the database's uniqueness constraint correctly rejects.
+    # Precomputing genders means the trial loop never touches the database
+    # at all, so this can't happen.
+    all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
+    tables = {}
+    for sa in all_sa:
+        tables.setdefault(sa.table_num, []).append(sa)
+
+    gender_lookup = {}
+    for sa in all_sa:
+        if sa.person_id is not None:
+            gender_lookup[("person", sa.person_id)] = _lookup_gender("person", sa.person_id)
+        elif sa.guest_id is not None:
+            gender_lookup[("guest", sa.guest_id)] = _lookup_gender("guest", sa.guest_id)
+
+    # Tables are always round (Table Planner only ever builds round tables),
+    # so seat 1 and the last seat are physical neighbors too, not just
+    # consecutively-numbered seats -- this wraparound pair was previously
+    # missed everywhere adjacency was checked in this file.
+    def _table_violation_counts(table_sas, table_size):
+        def _is_adjacent(s1, s2):
+            if abs(s1 - s2) == 1:
+                return True
+            return {s1, s2} == {1, table_size}
+
+        seat_of_pid = {sa.person_id: sa.seat_num for sa in table_sas if sa.person_id}
+        couple_viol = 0
+        for c in couples_data:
+            s1 = seat_of_pid.get(c["id"])
+            s2 = seat_of_pid.get(c["partner_id"])
+            if s1 is not None and s2 is not None and _is_adjacent(s1, s2):
+                couple_viol += 1
+
+        gender_by_seat = {}
+        for sa in table_sas:
+            key = ("person", sa.person_id) if sa.person_id is not None else ("guest", sa.guest_id)
+            g = gender_lookup.get(key, "")
+            if g:
+                gender_by_seat[sa.seat_num] = g
+        gender_viol = 0
+        for seat in range(1, table_size + 1):
+            neighbor = 1 if seat == table_size else seat + 1
+            g1 = gender_by_seat.get(seat)
+            g2 = gender_by_seat.get(neighbor)
+            if g1 and g2 and g1 == g2:
+                gender_viol += 1
+        return couple_viol, gender_viol
+
+    before_couple_total = before_gender_total = 0
+    for tnum, table_sas in tables.items():
+        c, g = _table_violation_counts(table_sas, table_sizes.get(tnum, 8))
+        before_couple_total += c
+        before_gender_total += g
+
+    for tnum, table_sas in tables.items():
+        size = table_sizes.get(tnum, 8)
+        for _ in range(20):
+            current_couple, current_gender = _table_violation_counts(table_sas, size)
+            if current_couple == 0 and current_gender == 0:
+                break
+
+            movable = [sa for sa in table_sas if not sa.is_locked]
+            best = None
+            for i in range(len(movable)):
+                for j in range(i + 1, len(movable)):
+                    sa_x, sa_y = movable[i], movable[j]
+                    sa_x.seat_num, sa_y.seat_num = sa_y.seat_num, sa_x.seat_num
+                    trial_couple, trial_gender = _table_violation_counts(table_sas, size)
+                    sa_x.seat_num, sa_y.seat_num = sa_y.seat_num, sa_x.seat_num  # revert (in-memory only, no DB access above)
+                    if trial_couple > current_couple:
+                        continue  # never accept a swap that increases couple adjacency
+                    if best is None or (trial_couple, trial_gender) < (best[0], best[1]):
+                        best = (trial_couple, trial_gender, sa_x, sa_y)
+
+            if best is None or (best[0], best[1]) >= (current_couple, current_gender):
+                break  # no improving swap found for this table
+
+            _, _, sa_x, sa_y = best
+            orig_x, orig_y = sa_x.seat_num, sa_y.seat_num
+            with db.session.no_autoflush:
+                sa_x.seat_num = -1  # placeholder, guaranteed not to collide
+                db.session.flush()
+                sa_y.seat_num = orig_x
+                db.session.flush()
+                sa_x.seat_num = orig_y
+                db.session.flush()
+
+    after_couple_total = after_gender_total = 0
+    for tnum, table_sas in tables.items():
+        c, g = _table_violation_counts(table_sas, table_sizes.get(tnum, 8))
+        after_couple_total += c
+        after_gender_total += g
+
+    fixes["couples_separated"] = max(0, before_couple_total - after_couple_total)
+    fixes["gender_improved"] = max(0, before_gender_total - after_gender_total)
 
     db.session.commit()
     return fixes
