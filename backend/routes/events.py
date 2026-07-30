@@ -134,7 +134,17 @@ def rsvp_list(event_id):
     declined.sort(key=key_func)
 
     from ..models import Person as _P
-    all_persons = _P.query.filter_by(person_type="member").order_by(_P.last_name,_P.first_name).all()
+    existing_person_ids = [r.person_id for r in event.rsvps]
+    all_persons = (_P.query
+                   .filter(_P.person_type.in_(["member", "honoraire", "aspirant"]))
+                   .filter(~_P.id.in_(existing_person_ids))
+                   .all())
+    # Chevaliers first, Honoraires/Aspirants at the bottom; alphabetical within each group.
+    all_persons.sort(key=lambda p: (
+        0 if p.person_type == "member" else 1,
+        (p.last_name or "").lower(),
+        (p.first_name or "").lower(),
+    ))
     total_collected = sum(float(r.amount_paid) for r in confirmed if r.amount_paid)
     return render_template("admin/events/rsvps.html",
                            event=event,
