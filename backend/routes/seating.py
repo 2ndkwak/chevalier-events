@@ -447,7 +447,7 @@ def propose_seating_fast(event_id):
         db.session.commit()
 
         fixes = _enforce_rules(event_id, couples)
-        msg = "Seating proposal generated successfully (prototype/fast path). Review and adjust as needed."
+        msg = "Seating proposal generated successfully. Review and adjust as needed."
         details = []
         if fixes["couples_separated"] > 0:
             details.append(f"{fixes['couples_separated']} couple(s) moved apart from adjacent seats")
