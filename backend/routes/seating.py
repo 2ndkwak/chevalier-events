@@ -453,9 +453,15 @@ def propose_seating_fast(event_id):
             details.append(f"{fixes['couples_separated']} couple(s) moved apart from adjacent seats")
         if fixes["officers_spread"] > 0:
             details.append(f"{fixes['officers_spread']} officer(s) redistributed across tables")
+        if fixes.get("not_together_fixed", 0) > 0:
+            details.append(f"{fixes['not_together_fixed']} \"do not seat together\" conflict(s) resolved")
         if details:
             msg += " (Auto-fixed: " + "; ".join(details) + ".)"
         flash(msg, "success")
+
+        if fixes.get("not_together_unresolved", 0) > 0:
+            flash(f"{fixes['not_together_unresolved']} \"do not seat together\" pair(s) could not be "
+                  f"separated automatically -- please check and adjust manually.", "warning")
 
         if unplaced:
             party_by_id = {p["party_id"]: p for p in parties}
@@ -2492,6 +2498,75 @@ def _enforce_rules(event_id, couples_data):
         tables = {}
         for sa in all_sa:
             tables.setdefault(sa.table_num, []).append(sa)
+
+    # -- 3. Fix "do not seat together" violations -------------------------------
+    # Checked last, against the truly final table assignments -- nothing
+    # upstream in this pass re-checks against this rule after moving anyone,
+    # so if it ran earlier it could get silently undone by the officer-spread
+    # step above. Only ever moves someone who isn't currently seated with
+    # their own partner; if both people in a violating pair are seated with
+    # their partner, this leaves it alone and reports it as unresolved
+    # rather than attempting the bigger, riskier job of relocating a couple.
+    all_sa = SeatAssignment.query.filter_by(event_id=event_id).all()
+    pid_to_sa = {sa.person_id: sa for sa in all_sa if sa.person_id}
+    tables = {}
+    for sa in all_sa:
+        tables.setdefault(sa.table_num, []).append(sa)
+
+    event = Event.query.get(event_id)
+    not_together_pairs = (event.seating_rules or {}).get("not_together") or []
+    table_sizes = {t["id"]: t["size"] for t in (event.table_config or {}).get("tables", [])}
+
+    fixes["not_together_fixed"] = 0
+    fixes["not_together_unresolved"] = 0
+
+    def _seated_with_partner(sa):
+        person = Person.query.get(sa.person_id)
+        if not person or not person.partner_id:
+            return False
+        partner_sa = pid_to_sa.get(person.partner_id)
+        return partner_sa is not None and partner_sa.table_num == sa.table_num
+
+    for a_id, b_id in not_together_pairs:
+        sa_a = pid_to_sa.get(a_id)
+        sa_b = pid_to_sa.get(b_id)
+        if not sa_a or not sa_b:
+            continue  # one or both aren't attending this event
+        if sa_a.table_num != sa_b.table_num:
+            continue  # already fine
+
+        mover = None
+        if not sa_a.is_locked and not _seated_with_partner(sa_a):
+            mover = sa_a
+        elif not sa_b.is_locked and not _seated_with_partner(sa_b):
+            mover = sa_b
+
+        if mover is None:
+            fixes["not_together_unresolved"] += 1
+            continue
+
+        current_table = mover.table_num
+        moved = False
+        for tnum, size in table_sizes.items():
+            if tnum == current_table:
+                continue
+            occupied = {sa.seat_num for sa in tables.get(tnum, [])}
+            if len(occupied) >= size:
+                continue
+            free_seat = next((s for s in range(1, size + 1) if s not in occupied), None)
+            if free_seat is None:
+                continue
+            if mover in tables.get(current_table, []):
+                tables[current_table].remove(mover)
+            mover.table_num = tnum
+            mover.seat_num = free_seat
+            tables.setdefault(tnum, []).append(mover)
+            fixes["not_together_fixed"] += 1
+            moved = True
+            break
+
+        if not moved:
+            fixes["not_together_unresolved"] += 1
 
     db.session.commit()
     return fixes
