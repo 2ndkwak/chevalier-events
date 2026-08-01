@@ -132,11 +132,35 @@ def fit_scale(build_fn, w, h, font_name, min_scale=0.55, max_scale=1.8, steps=26
     return min_scale
 
 
-def draw_panel(c, build_fn, x, y, w, h, font_name):
+def _measure_flows_height(flows, w, h):
+    """Places flowables into a scratch, off-page Frame the same way
+    _fits_at_scale does, and reports how much vertical space they actually
+    consumed -- summing each flowable's own .wrap() height in isolation
+    undercounts this, since it misses the spaceBefore/spaceAfter Frame
+    adds between items."""
+    scratch = canvaslib.Canvas(io.BytesIO(), pagesize=(2000, 2000))
+    frame = Frame(0, 0, w, h, leftPadding=0, rightPadding=0,
+                  topPadding=0, bottomPadding=0, showBoundary=0)
+    frame.addFromList(list(flows), scratch)
+    return (frame._y1 + h) - frame._y
+
+
+def draw_panel(c, build_fn, x, y, w, h, font_name, center_vertically=False):
     scale = fit_scale(build_fn, w, h, font_name)
     flows = build_fn(scale, font_name)
+
+    top_padding = 0
+    if center_vertically:
+        # Center the block in the panel instead of leaving it flush
+        # against the top -- most noticeable on a short list (a small
+        # event), but harmless to apply generally, since a nearly-full
+        # panel just gets nudged a few points either way.
+        content_h = _measure_flows_height(build_fn(scale, font_name), w, h)
+        if content_h < h:
+            top_padding = (h - content_h) / 2
+
     frame = Frame(x, y, w, h, leftPadding=0, rightPadding=0,
-                  topPadding=0, bottomPadding=0, showBoundary=0)
+                  topPadding=top_padding, bottomPadding=0, showBoundary=0)
     frame.addFromList(flows, c)
     return scale
 
@@ -376,10 +400,23 @@ def draw_cover(c, data, x, y, w, h, font_name):
         gaps = (gap_above_logo + gap_below_logo) * scale if has_logo else 0
         return 2 * max(th, bh) + logo_h + gaps
 
+    def max_line_width_at(scale):
+        # The org-name lines are always short enough to fit, but the event
+        # title (and occasionally venue name) can be long -- the height-only
+        # search below previously had no idea how wide any line actually
+        # was, so a short event (few detail lines) could scale the title up
+        # well past the panel's actual width and run off the page.
+        all_lines = top_lines + bottom_lines
+        if not all_lines:
+            return 0
+        return max(line_width(text, size * scale) for size, text in all_lines)
+
+    available_w = w * 0.94  # small margin so text doesn't print flush to the panel edge
+
     scale = 0.6
     for i in range(30):
         s = 1.8 - i * (1.8 - 0.6) / 29
-        if total_height_at(s) <= h:
+        if total_height_at(s) <= h and max_line_width_at(s) <= available_w:
             scale = s
             break
 
@@ -422,7 +459,7 @@ def generate(data, font_path, output_path):
     panel_y = MARGIN
 
     draw_panel(c, lambda s, f: build_attendee_flowables(data, s, f),
-              left_x, panel_y, PANEL_W, PANEL_H, font_name)
+              left_x, panel_y, PANEL_W, PANEL_H, font_name, center_vertically=True)
     draw_cover(c, data, right_x, panel_y, PANEL_W, PANEL_H, font_name)
 
     c.setStrokeColor(colors.HexColor("#DDDDDD"))
