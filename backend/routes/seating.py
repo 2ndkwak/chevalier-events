@@ -132,9 +132,19 @@ def save_rules(event_id):
 @admin_required
 def toggle_global_rule(rule_id):
     rule = SeatingRule.query.get_or_404(rule_id)
+    event_id = request.form.get("event_id", type=int)
+
+    # These two are fused into a single seating "party" before the AI ever
+    # runs, not checked afterward like the other three -- there's no
+    # meaningful way to turn them off, so reject a toggle attempt here too,
+    # not just hide the button in the template.
+    if rule.rule_type in ("couples_same_table", "guests_with_host"):
+        flash(f"'{rule.description}' is structural and can't be disabled -- "
+              f"it's fused into how seating is built before anything else runs.", "warning")
+        return redirect(url_for("seating.seating_home", event_id=event_id) + "#permanent-rules")
+
     rule.is_active = not rule.is_active
     db.session.commit()
-    event_id = request.form.get("event_id", type=int)
     flash(f"'{rule.description}' {'enabled' if rule.is_active else 'disabled'}.", "success")
     return redirect(url_for("seating.seating_home", event_id=event_id) + "#permanent-rules")
 

@@ -407,12 +407,19 @@
           <span class="text-sm" style="flex:1; {% if not rule.is_active %}color:var(--ink-muted); text-decoration:line-through;{% endif %}">
             {{ rule.description }}
           </span>
+          {% if rule.rule_type in ("couples_same_table", "guests_with_host") %}
+          <span class="btn btn-sm" style="background:var(--parchment-dk); color:var(--ink-muted); cursor:default;"
+                title="This rule is fused into how seating is built and can't be turned off.">
+            Always on
+          </span>
+          {% else %}
           <form method="POST" action="{{ url_for('seating.toggle_global_rule', rule_id=rule.id) }}">
             <input type="hidden" name="event_id" value="{{ event.id }}">
             <button class="btn {% if rule.is_active %}btn-gold{% else %}btn-outline{% endif %} btn-sm">
               {% if rule.is_active %}Active{% else %}Disabled{% endif %}
             </button>
           </form>
+          {% endif %}
           <form method="POST" action="{{ url_for('seating.delete_global_rule', rule_id=rule.id) }}"
                 onsubmit="return confirm('Delete this permanent rule? This can\'t be undone.')">
             <input type="hidden" name="event_id" value="{{ event.id }}">
