@@ -20,6 +20,19 @@
 </div>
 {% endif %}
 
+{% if mismatches %}
+<div class="card" style="border-left:4px solid var(--gold); background:var(--gold-pale); margin-bottom:1.2rem;">
+  <div style="font-weight:600; color:var(--ink-mid); margin-bottom:.4rem;">Course numbers don't line up with the wine list:</div>
+  <ul style="margin:0; padding-left:1.2rem; color:var(--ink-mid); font-size:.9rem;">
+    {% for w in mismatches %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+  <p class="text-muted text-sm" style="margin:.5rem 0 0 0;">
+    This won't stop you from generating the booklet, but wines and dishes may print under the
+    wrong headings until course numbers on both lists match. See the Wine Tags screen to review.
+  </p>
+</div>
+{% endif %}
+
 <div class="card" style="margin-bottom:1.2rem;">
   <div class="card-title">Upload menu</div>
   <p class="text-muted text-sm" style="margin-top:0;">
@@ -87,6 +100,12 @@
       <option value="gregorian">GregorianFLF (default)</option>
       <option value="serif">Serif (fallback)</option>
     </select>
+    {% if mismatches %}
+    <label style="display:flex; align-items:center; gap:.4rem; font-size:.85rem; color:var(--ink-mid);">
+      <input type="checkbox" name="confirmed" value="1" required>
+      Generate anyway, despite the course-number mismatch above
+    </label>
+    {% endif %}
     <button type="submit" class="btn btn-gold">Generate Booklet (PDF)</button>
   </form>
 </div>

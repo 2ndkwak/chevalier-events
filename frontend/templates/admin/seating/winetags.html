@@ -20,6 +20,19 @@
 </div>
 {% endif %}
 
+{% if mismatches %}
+<div class="card" style="border-left:4px solid var(--gold); background:var(--gold-pale); margin-bottom:1.2rem;">
+  <div style="font-weight:600; color:var(--ink-mid); margin-bottom:.4rem;">Course numbers don't line up with the menu:</div>
+  <ul style="margin:0; padding-left:1.2rem; color:var(--ink-mid); font-size:.9rem;">
+    {% for w in mismatches %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+  <p class="text-muted text-sm" style="margin:.5rem 0 0 0;">
+    This won't stop you from generating the booklet, but wines and dishes may print under the
+    wrong headings until course numbers on both lists match. See the Menu screen to review.
+  </p>
+</div>
+{% endif %}
+
 <div class="card" style="margin-bottom:1.2rem;">
   <div class="card-title">Upload wine list</div>
   <p class="text-muted text-sm" style="margin-top:0;">
