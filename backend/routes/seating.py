@@ -831,10 +831,13 @@ def wine_tags(event_id):
                         if not row.get("domain") or not row.get("appellation"):
                             errors.append(f"Row {i}: domain and appellation are required")
                             continue
+                        # Only "red" ever gets special treatment in the booklet (burgundy
+                        # text); everything else -- blank, "white", "rose", a typo, whatever --
+                        # is rendered identically as the default. So there's nothing to
+                        # validate here beyond normalizing it; rejecting anything that isn't
+                        # exactly "red"/"white" would only block legitimate rare colors
+                        # (rose, sparkling, etc.) for no functional benefit.
                         color = row.get("color", "").strip().lower() or None
-                        if color and color not in ("red", "white"):
-                            errors.append(f"Row {i}: color must be 'red' or 'white' (or blank), got '{color}'")
-                            continue
                         new_wines.append({
                             "position": position,
                             "course": course,
@@ -879,8 +882,9 @@ def wine_tags(event_id):
                         return redirect(url_for("seating.wine_tags", event_id=event_id))
 
     wines = WineTag.query.filter_by(event_id=event_id).order_by(WineTag.course, WineTag.position).all()
+    mismatches = _course_mismatch_warnings(event_id)
     return render_template("admin/seating/winetags.html",
-                           event=event, wines=wines, errors=errors)
+                           event=event, wines=wines, errors=errors, mismatches=mismatches)
 
 
 @seating_bp.route("/event/<int:event_id>/winetags/template")
@@ -1083,8 +1087,9 @@ def menu_items(event_id):
                         return redirect(url_for("seating.menu_items", event_id=event_id))
 
     items = MenuItem.query.filter_by(event_id=event_id).order_by(MenuItem.course).all()
+    mismatches = _course_mismatch_warnings(event_id)
     return render_template("admin/seating/menu.html",
-                           event=event, items=items, errors=errors)
+                           event=event, items=items, errors=errors, mismatches=mismatches)
 
 
 @seating_bp.route("/event/<int:event_id>/menu/template")
@@ -1383,6 +1388,18 @@ def generate_booklet(event_id):
     event = Event.query.get_or_404(event_id)
     font_choice = request.args.get("font", "gregorian")
 
+    # If the wine list and menu's course numbers don't line up, require an
+    # explicit confirmation click rather than silently generating a booklet
+    # that's likely to have wines and dishes printed under the wrong
+    # headings -- but never hard-block, since generating a partial booklet
+    # mid-process (before every course's wine is in yet) is a normal,
+    # intentional part of the workflow.
+    mismatches = _course_mismatch_warnings(event_id)
+    if mismatches and request.args.get("confirmed") != "1":
+        flash("Course numbers don't line up between the wine list and menu -- "
+              "review the warnings below and confirm before generating.", "warning")
+        return redirect(url_for("seating.menu_items", event_id=event_id, font=font_choice))
+
     try:
         data = build_booklet_data(event)
     except Exception as e:
@@ -1416,6 +1433,43 @@ def generate_booklet(event_id):
 
 
 # --- HELPERS ------------------------------------------------------------------
+
+def _course_mismatch_warnings(event_id):
+    """
+    Compares the wine list's course numbers against the menu's course
+    numbers for an event and returns a list of specific, human-readable
+    warnings for anything that doesn't line up -- e.g. a course with
+    wine(s) uploaded but no matching dish, or vice versa. This is what
+    catches the single most common real-world mistake with the booklet:
+    a course-numbering mismatch between the two lists.
+
+    Returns an empty list whenever there's nothing meaningful to compare
+    yet (either list is still empty) or everything lines up correctly.
+    Never raises -- this is advisory, not a hard gate.
+    """
+    wines = WineTag.query.filter_by(event_id=event_id).all()
+    items = MenuItem.query.filter_by(event_id=event_id).all()
+    if not wines or not items:
+        return []
+
+    wine_courses = {w.course for w in wines}
+    menu_courses = {m.course for m in items}
+
+    warnings = []
+    # Wine with no matching dish -- course 0 (Cocktails) is exempt by
+    # design, since it's meant to have wines served before guests are
+    # seated with no matching dish at all.
+    for c in sorted(wine_courses - menu_courses):
+        if c == 0:
+            continue
+        warnings.append(f"Course {c} has wine(s) uploaded but no matching dish in the menu.")
+    # Dish with no wine -- no exemption for course 0 here; a dish entered
+    # under Cocktails with no wine to go with it is unusual and worth
+    # flagging just the same as any other course.
+    for c in sorted(menu_courses - wine_courses):
+        warnings.append(f"Course {c} has a dish in the menu but no wine uploaded.")
+    return warnings
+
 
 def _get_attendees(event):
     """
@@ -1855,6 +1909,15 @@ def _build_party_prompt(event, parties, not_together_pairs, history, tables):
             history_desc = "\nRECENT SEATING HISTORY (avoid repeating these groupings):\n" + \
                            "\n".join(f"  - {n}" for n in names_seen)
 
+    priorities = [
+        "Every locked party MUST stay at its locked table",
+        "No table may exceed its seat count (sum of party sizes at that table)",
+    ]
+    if _rule_active("officer_per_table"):
+        priorities.append("Spread officers as evenly as possible across tables")
+    priorities.append("Avoid recreating recent table groupings where possible")
+    priorities_desc = "\n".join(f"  {i + 1}. {p}" for i, p in enumerate(priorities))
+
     prompt = f"""
 You are assigning {len(parties)} parties (groups that must sit together) to {len(tables)} tables
 for '{event.title}'. A party is already a fixed unit -- do NOT split a party across tables or
@@ -1871,10 +1934,7 @@ PERMANENT RULES:
 {not_together_desc}
 
 OPTIMIZATION PRIORITIES:
-  1. Every locked party MUST stay at its locked table
-  2. No table may exceed its seat count (sum of party sizes at that table)
-  3. Spread officers as evenly as possible across tables
-  4. Avoid recreating recent table groupings where possible
+{priorities_desc}
 {history_desc}
 {custom_rules}
 
@@ -1890,6 +1950,16 @@ Respond in exactly two parts, in this order:
 """.strip()
 
     return prompt
+
+
+def _rule_active(rule_type, default=True):
+    """Looks up whether a permanent seating rule is currently enabled, by
+    its stable internal type name (e.g. "officer_per_table") rather than
+    its editable description text. Defaults to True (the rule behaves as
+    if it's on) if the rule record is somehow missing entirely, since
+    that's always been the app's normal state."""
+    rule = SeatingRule.query.filter_by(rule_type=rule_type).first()
+    return rule.is_active if rule else default
 
 
 def _lookup_gender(kind, ident):
@@ -2310,7 +2380,7 @@ def _enforce_rules(event_id, couples_data):
 
     # -- 1. Spread officers ------------------------------------------------------
     num_tables = len(tables)
-    if num_tables >= 2:
+    if _rule_active("officer_per_table") and num_tables >= 2:
         def officer_count(tnum):
             return sum(1 for sa in tables.get(tnum, [])
                        if sa.person_id and Person.query.get(sa.person_id) and
@@ -2482,6 +2552,12 @@ def _enforce_rules(event_id, couples_data):
         elif sa.guest_id is not None:
             gender_lookup[("guest", sa.guest_id)] = _lookup_gender("guest", sa.guest_id)
 
+    # Both checked once, up front, rather than inside the hot loop below --
+    # when a rule is disabled, this pass simply stops treating it as a
+    # violation to fix at all, rather than forcing it regardless.
+    couples_adjacent_active = _rule_active("couples_non_adjacent")
+    gender_active = _rule_active("alternate_genders")
+
     # Tables are always round (Table Planner only ever builds round tables),
     # so seat 1 and the last seat are physical neighbors too, not just
     # consecutively-numbered seats -- this wraparound pair was previously
@@ -2492,27 +2568,29 @@ def _enforce_rules(event_id, couples_data):
                 return True
             return {s1, s2} == {1, table_size}
 
-        seat_of_pid = {sa.person_id: sa.seat_num for sa in table_sas if sa.person_id}
         couple_viol = 0
-        for c in couples_data:
-            s1 = seat_of_pid.get(c["id"])
-            s2 = seat_of_pid.get(c["partner_id"])
-            if s1 is not None and s2 is not None and _is_adjacent(s1, s2):
-                couple_viol += 1
+        if couples_adjacent_active:
+            seat_of_pid = {sa.person_id: sa.seat_num for sa in table_sas if sa.person_id}
+            for c in couples_data:
+                s1 = seat_of_pid.get(c["id"])
+                s2 = seat_of_pid.get(c["partner_id"])
+                if s1 is not None and s2 is not None and _is_adjacent(s1, s2):
+                    couple_viol += 1
 
-        gender_by_seat = {}
-        for sa in table_sas:
-            key = ("person", sa.person_id) if sa.person_id is not None else ("guest", sa.guest_id)
-            g = gender_lookup.get(key, "")
-            if g:
-                gender_by_seat[sa.seat_num] = g
         gender_viol = 0
-        for seat in range(1, table_size + 1):
-            neighbor = 1 if seat == table_size else seat + 1
-            g1 = gender_by_seat.get(seat)
-            g2 = gender_by_seat.get(neighbor)
-            if g1 and g2 and g1 == g2:
-                gender_viol += 1
+        if gender_active:
+            gender_by_seat = {}
+            for sa in table_sas:
+                key = ("person", sa.person_id) if sa.person_id is not None else ("guest", sa.guest_id)
+                g = gender_lookup.get(key, "")
+                if g:
+                    gender_by_seat[sa.seat_num] = g
+            for seat in range(1, table_size + 1):
+                neighbor = 1 if seat == table_size else seat + 1
+                g1 = gender_by_seat.get(seat)
+                g2 = gender_by_seat.get(neighbor)
+                if g1 and g2 and g1 == g2:
+                    gender_viol += 1
         return couple_viol, gender_viol
 
     before_couple_total = before_gender_total = 0
