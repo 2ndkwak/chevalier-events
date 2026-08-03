@@ -453,14 +453,27 @@ class MenuItem(db.Model):
     dish_french   = db.Column(db.Text, nullable=True)
     dish_english  = db.Column(db.Text)
 
+    # Display-order hint, only meaningful for course 0 (Cocktails), the one
+    # course allowed to hold more than one row -- see the partial unique
+    # index below. Not enforced unique; ties just fall back to insertion
+    # order. Every other course still gets exactly one row, same as always.
+    position      = db.Column(db.Integer, default=1)
+
     created_at    = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at    = db.Column(db.DateTime, default=datetime.utcnow,
                               onupdate=datetime.utcnow)
 
     event         = db.relationship("Event", back_populates="menu_items")
 
+    # Only one row per (event, course) -- EXCEPT course 0, which is allowed
+    # to repeat (e.g. several hors d'oeuvres items). This is a partial
+    # index rather than a plain UniqueConstraint specifically so course 0
+    # is excluded from it at the database level, not just in application
+    # code -- see migrate_add_menu_position.py, since SQLite can't alter a
+    # constraint in place.
     __table_args__ = (
-        db.UniqueConstraint("event_id", "course", name="uq_menu_item_per_course"),
+        db.Index("uq_menu_item_per_course", "event_id", "course",
+                 unique=True, sqlite_where=db.text("course != 0")),
     )
 
     def __repr__(self):
