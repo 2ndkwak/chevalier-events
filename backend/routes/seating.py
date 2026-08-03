@@ -1031,6 +1031,20 @@ def menu_items(event_id):
                         except ValueError:
                             errors.append(f"Row {i}: course must be a number, got '{row['course']}'")
                             continue
+
+                        # Optional -- only meaningful for course 0 (Cocktails), the
+                        # one course that can hold more than one row (e.g. several
+                        # hors d'oeuvres). Defaults to 1; not required to be unique,
+                        # it's just a display-order hint. Every other course still
+                        # gets exactly one row, same as always.
+                        position = 1
+                        if row.get("position"):
+                            try:
+                                position = int(row["position"])
+                            except ValueError:
+                                errors.append(f"Row {i}: position must be a number, got '{row['position']}'")
+                                continue
+
                         # dish_french is optional -- a row can carry just a course
                         # number and a label (e.g. course 0 = "Cocktails", which
                         # has wines but no matching dish) with no dish text at
@@ -1048,6 +1062,7 @@ def menu_items(event_id):
 
                         new_items.append({
                             "course": course,
+                            "position": position,
                             "dish_french": _blank_or(row.get("dish_french")),
                             "dish_english": _blank_or(row.get("dish_english")),
                             "label": row.get("label", "").strip() or None,
@@ -1057,9 +1072,13 @@ def menu_items(event_id):
                         if not new_items:
                             errors.append("No menu rows found in the file.")
                         else:
+                            # Course 0 (Cocktails) is the one exception allowed to
+                            # repeat -- everything else still needs exactly one row.
                             seen = set()
                             dupes = set()
                             for m in new_items:
+                                if m["course"] == 0:
+                                    continue
                                 if m["course"] in seen:
                                     dupes.add(m["course"])
                                 else:
@@ -1068,7 +1087,7 @@ def menu_items(event_id):
                                 for course in sorted(dupes):
                                     errors.append(
                                         f"Course {course} appears more than once -- only one dish "
-                                        f"per course is supported."
+                                        f"per course is supported (course 0 is the only exception)."
                                     )
 
                     if not errors and new_items:
@@ -1096,7 +1115,7 @@ def menu_items(event_id):
                         flash(f"Menu saved -- {len(new_items)} course(s).", "success")
                         return redirect(url_for("seating.menu_items", event_id=event_id))
 
-    items = MenuItem.query.filter_by(event_id=event_id).order_by(MenuItem.course).all()
+    items = MenuItem.query.filter_by(event_id=event_id).order_by(MenuItem.course, MenuItem.position, MenuItem.id).all()
     mismatches = _course_mismatch_warnings(event_id)
     return render_template("admin/seating/menu.html",
                            event=event, items=items, errors=errors, mismatches=mismatches)
@@ -1110,12 +1129,19 @@ def menu_items_template(event_id):
     import csv, io
     from flask import Response
 
-    columns = ["course", "dish_french", "dish_english", "label"]
+    columns = ["course", "position", "dish_french", "dish_english", "label"]
     example_rows = [
-        {"course": "0", "dish_french": "Leave Blank", "dish_english": "Leave Blank", "label": "Cocktails"},
-        {"course": "1", "dish_french": "Seriole, citron Meyer, fenouil, emulsion d'olives Castelvetrano, capres",
+        # Course 0 (Cocktails) is the one course that can have more than one
+        # row -- position tells the app what order to print them in. Every
+        # other course still gets exactly one row; position can just stay 1
+        # (or be left blank) for those.
+        {"course": "0", "position": "1", "dish_french": "Gougeres au fromage",
+         "dish_english": "Cheese gougeres", "label": "Transmis Hors d'Oeuvres"},
+        {"course": "0", "position": "2", "dish_french": "Tartare de saumon fume",
+         "dish_english": "Smoked salmon tartare", "label": ""},
+        {"course": "1", "position": "1", "dish_french": "Seriole, citron Meyer, fenouil, emulsion d'olives Castelvetrano, capres",
          "dish_english": "Yellowtail, Meyer lemon, fennel, Castelvetrano olive emulsion, capers", "label": "Premier Assiette"},
-        {"course": "2", "dish_french": "Canard, champignons sauvages, fregola sarda, asperges, peche, glace au jus de canard",
+        {"course": "2", "position": "1", "dish_french": "Canard, champignons sauvages, fregola sarda, asperges, peche, glace au jus de canard",
          "dish_english": "Duck, wild mushrooms, fregola sarda, asparagus, peach, duck glace", "label": "Deuxieme Assiette"},
     ]
     output = io.StringIO()
@@ -1348,13 +1374,21 @@ def build_booklet_data(event):
         for w in wine_by_course[course_num]:
             text_parts = [p for p in [w.vintage, w.domain, f'"{w.appellation}"' if w.appellation else None] if p]
             wine_list.append({"text": " ".join(text_parts), "color": w.color})
-        wine_courses.append({"label": label, "wines": wine_list})
+        wine_courses.append({"course": course_num, "label": label, "wines": wine_list})
 
-    menu_items = MenuItem.query.filter_by(event_id=event.id).order_by(MenuItem.course).all()
+    menu_item_rows = MenuItem.query.filter_by(event_id=event.id) \
+        .order_by(MenuItem.course, MenuItem.position, MenuItem.id).all()
     menu_by_course = []
-    for m in menu_items:
-        label = course_labels.get(m.course, f"Course {m.course}")
-        menu_by_course.append({"label": label, "dish_french": m.dish_french, "dish_english": m.dish_english})
+    _course_entries = {}
+    for m in menu_item_rows:
+        entry = _course_entries.get(m.course)
+        if entry is None:
+            label = course_labels.get(m.course, f"Course {m.course}")
+            entry = {"course": m.course, "label": label, "dishes": []}
+            _course_entries[m.course] = entry
+            menu_by_course.append(entry)
+        if m.dish_french or m.dish_english:
+            entry["dishes"].append({"dish_french": m.dish_french, "dish_english": m.dish_english})
 
     logo_path = _os.path.join(project_root, "frontend", "static", "img", "Chevalier_Logo.jpg")
 
