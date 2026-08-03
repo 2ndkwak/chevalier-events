@@ -166,20 +166,24 @@ def draw_panel(c, build_fn, x, y, w, h, font_name, center_vertically=False):
 
 
 def draw_synced_panels(c, wine_build_fn, menu_build_fn, wine_x, menu_x, y, w, h, font_name,
-                       cocktail_offset_measurer):
+                       course0_heights_measurer):
     """
     Both frames start at the SAME top position, so "Les Vins" and
-    "Escriteau" print at the same level. The Cocktail section has no
-    matching dish, so the menu column instead gets an internal spacer
-    (inserted between its title and its first course) sized to match the
-    Cocktail section's height, pushing "Premier Assiette" down to roughly
-    line up with its wines -- without disturbing where "Escriteau" itself
-    sits. Later courses aren't individually re-synced after that.
+    "Escriteau" print at the same level. Course 0 (Cocktails) can hold
+    different amounts of content on each side now -- wines on one, an
+    optional list of hors d'oeuvres on the other -- so whichever side's
+    course-0 block is shorter gets an internal spacer (inserted between
+    its title and its first course) sized to match the difference,
+    pushing "Premier Assiette" down to line up on both sides regardless
+    of which one had more under Cocktails. Later courses aren't
+    individually re-synced after that.
     """
     def joint_fits(scale):
-        offset = cocktail_offset_measurer(scale, font_name, w)
-        wine_ok = _fits_at_scale(wine_build_fn, scale, w, h, font_name)
-        menu_ok = _fits_at_scale(lambda s, f: menu_build_fn(s, f, offset), scale, w, h, font_name)
+        wine_h, menu_h = course0_heights_measurer(scale, font_name, w)
+        wine_offset = max(0, menu_h - wine_h)
+        menu_offset = max(0, wine_h - menu_h)
+        wine_ok = _fits_at_scale(lambda s, f: wine_build_fn(s, f, wine_offset), scale, w, h, font_name)
+        menu_ok = _fits_at_scale(lambda s, f: menu_build_fn(s, f, menu_offset), scale, w, h, font_name)
         return wine_ok and menu_ok
 
     scale = 0.55
@@ -190,14 +194,16 @@ def draw_synced_panels(c, wine_build_fn, menu_build_fn, wine_x, menu_x, y, w, h,
             scale = s
             break
 
-    offset = cocktail_offset_measurer(scale, font_name, w)
+    wine_h, menu_h = course0_heights_measurer(scale, font_name, w)
+    wine_offset = max(0, menu_h - wine_h)
+    menu_offset = max(0, wine_h - menu_h)
 
-    wine_flows = wine_build_fn(scale, font_name)
+    wine_flows = wine_build_fn(scale, font_name, wine_offset)
     wine_frame = Frame(wine_x, y, w, h, leftPadding=0, rightPadding=0,
                        topPadding=0, bottomPadding=0, showBoundary=0)
     wine_frame.addFromList(wine_flows, c)
 
-    menu_flows = menu_build_fn(scale, font_name, offset)
+    menu_flows = menu_build_fn(scale, font_name, menu_offset)
     menu_frame = Frame(menu_x, y, w, h, leftPadding=0, rightPadding=0,
                        topPadding=0, bottomPadding=0, showBoundary=0)
     menu_frame.addFromList(menu_flows, c)
@@ -241,7 +247,7 @@ def build_attendee_flowables(data, scale, font_name):
     return flows
 
 
-def build_wine_flowables(data, scale, font_name, include_title=True):
+def build_wine_flowables(data, scale, font_name, include_title=True, pre_course_spacer=0):
     hstyle = ParagraphStyle(
         "wheader", fontName=font_name, fontSize=13 * scale,
         leading=16 * scale, textColor=INK, alignment=TA_CENTER,
@@ -260,13 +266,33 @@ def build_wine_flowables(data, scale, font_name, include_title=True):
     flows = []
     if include_title:
         flows.append(Paragraph(f"<u>{header_markup('Les Vins')}</u>", hstyle))
-    for course in data.get("wine_courses", []):
+
+    wine_courses = data.get("wine_courses", [])
+    # Identify course 0 (Cocktails) by its actual course NUMBER, not by
+    # matching its label text -- the label is freely editable (e.g.
+    # renamed to "Transmis Hors d'Oeuvres" to match the menu side), so
+    # string-matching "cocktail"/"cocktails" silently breaks the moment
+    # someone customizes it, which is exactly the point of course 0
+    # allowing a custom label in the first place.
+    has_course0 = any(c.get("course") == 0 for c in wine_courses)
+    # If there's no course-0 wine section at all, the compensating gap
+    # (when the menu side has more course-0 content) goes right after the
+    # panel title, same as before. Otherwise it goes right after course
+    # 0's own block, so "Les Vins" and its course-0 heading stay level
+    # with "Escriteau" and its course-0 counterpart on the other side, and
+    # only the space before the next course adjusts.
+    if not has_course0 and pre_course_spacer > 0:
+        flows.append(Spacer(1, pre_course_spacer))
+
+    for course in wine_courses:
         flows.append(Paragraph(f"<u>{header_markup(course['label'])}</u>", chstyle))
         for w in course["wines"]:
             text = w["text"]
             if w.get("color") == "red":
                 text = f'<font color="{RED_WINE_HEX}">{text}</font>'
             flows.append(Paragraph(text, bstyle))
+        if course.get("course") == 0 and pre_course_spacer > 0:
+            flows.append(Spacer(1, pre_course_spacer))
     return flows
 
 
@@ -294,49 +320,70 @@ def build_menu_flowables(data, scale, font_name, pre_course_spacer=0, include_ti
     flows = []
     if include_title:
         flows.append(Paragraph(f"<u>{header_markup('Escriteau')}</u>", hstyle))
-    if pre_course_spacer > 0:
+
+    # Course 0 (Cocktails) can carry several dishes (e.g. a few hors
+    # d'oeuvres); every other course still only ever has exactly one. Each
+    # dish gets its own French line, with an optional italic English line
+    # beneath it, the same as any other course.
+    menu_courses = [c for c in data.get("menu_by_course", []) if c.get("dishes")]
+    has_course0 = any(c.get("course") == 0 for c in menu_courses)
+    # If course 0 has no real content (the traditional blank-Cocktails
+    # case), the compensating gap goes right after the panel title, same
+    # as before. Otherwise it goes right after course 0's own content, so
+    # "Escriteau" and its course-0 heading stay level with "Les Vins" and
+    # Cocktails on the other side, and only the space before Premier
+    # Assiette adjusts.
+    if not has_course0 and pre_course_spacer > 0:
         flows.append(Spacer(1, pre_course_spacer))
-    menu_courses = [c for c in data.get("menu_by_course", []) if c.get("dish_french")]
+
     for course in menu_courses:
         flows.append(Paragraph(f"<u>{header_markup(course['label'])}</u>", chstyle))
-        flows.append(Paragraph(course["dish_french"], frstyle))
-        if course.get("dish_english"):
-            flows.append(Paragraph(f"<i>{course['dish_english']}</i>", enstyle))
+        for dish in course["dishes"]:
+            if dish.get("dish_french"):
+                flows.append(Paragraph(dish["dish_french"], frstyle))
+            if dish.get("dish_english"):
+                flows.append(Paragraph(f"<i>{dish['dish_english']}</i>", enstyle))
+        if course.get("course") == 0 and pre_course_spacer > 0:
+            flows.append(Spacer(1, pre_course_spacer))
     return flows
 
 
-def _measure_cocktail_offset(data):
-    def measurer(scale, font_name, w):
-        hstyle = ParagraphStyle(
-            "wheader", fontName=font_name, fontSize=13 * scale,
-            leading=16 * scale, alignment=TA_CENTER,
-            spaceBefore=2 * scale, spaceAfter=10 * scale,
-        )
-        chstyle = ParagraphStyle(
-            "cheader", fontName=font_name, fontSize=10.5 * scale,
-            leading=13 * scale, alignment=TA_CENTER,
-            spaceBefore=10 * scale, spaceAfter=4 * scale,
-        )
-        bstyle = ParagraphStyle(
-            "wbody", fontName=font_name, fontSize=9.5 * scale,
-            leading=12.5 * scale, alignment=TA_CENTER, spaceAfter=2 * scale,
-        )
-        total = 0.0
-        title_p = Paragraph(header_markup("Les Vins"), hstyle)
-        tw, th = title_p.wrap(w, 5000)
-        total += th
+def _measure_course0_heights(data):
+    """Returns a function (scale, font_name, w) -> (wine_h, menu_h): how
+    tall each side's course-0 (Cocktails) block actually is, including its
+    own "Les Vins"/"Escriteau" title. Used to reconcile the two sides so
+    both the course-0 heading itself AND "Premier Assiette" line up,
+    regardless of which side has more content under Cocktails -- wine
+    almost always does, but course 0 can now carry its own hors d'oeuvres
+    too, sometimes more, sometimes fewer than the number of cocktail
+    wines.
 
-        cocktail_courses = [c for c in data.get("wine_courses", [])
-                            if c["label"].strip().lower() in ("cocktail", "cocktails")]
-        for course in cocktail_courses:
-            ch_p = Paragraph(header_markup(course["label"]), chstyle)
-            _, ch_h = ch_p.wrap(w, 5000)
-            total += ch_h
-            for wine in course["wines"]:
-                wp = Paragraph(wine["text"], bstyle)
-                _, wh = wp.wrap(w, 5000)
-                total += wh
-        return total
+    Measures by actually placing the real flowables (the same functions
+    the real render uses) into a scratch, off-page Frame and reading back
+    how much space they consumed -- summing each paragraph's own .wrap()
+    height in isolation was tried first and reliably undercounts real
+    inter-paragraph spacing once there's more than a line or two of
+    content, which showed up as a real, measurable misalignment."""
+    def _frame_height(flows, w):
+        scratch = canvaslib.Canvas(io.BytesIO(), pagesize=(2000, 2000))
+        frame = Frame(0, 0, w, 5000, leftPadding=0, rightPadding=0,
+                      topPadding=0, bottomPadding=0, showBoundary=0)
+        frame.addFromList(list(flows), scratch)
+        return 5000 - frame._y
+
+    def measurer(scale, font_name, w):
+        course0_wine = [c for c in data.get("wine_courses", []) if c.get("course") == 0]
+        wine_flows = build_wine_flowables({"wine_courses": course0_wine}, scale, font_name,
+                                          include_title=True)
+        wine_h = _frame_height(wine_flows, w)
+
+        course0 = next((c for c in data.get("menu_by_course", [])
+                        if c.get("course") == 0 and c.get("dishes")), None)
+        menu_flows = build_menu_flowables({"menu_by_course": [course0] if course0 else []},
+                                          scale, font_name, pre_course_spacer=0, include_title=True)
+        menu_h = _frame_height(menu_flows, w)
+
+        return wine_h, menu_h
     return measurer
 
 
@@ -470,10 +517,10 @@ def generate(data, font_path, output_path):
 
     draw_synced_panels(
         c,
-        lambda s, f: build_wine_flowables(data, s, f),
+        lambda s, f, off=0: build_wine_flowables(data, s, f, pre_course_spacer=off),
         lambda s, f, off=0: build_menu_flowables(data, s, f, off),
         left_x, right_x, panel_y, PANEL_W, PANEL_H, font_name,
-        _measure_cocktail_offset(data),
+        _measure_course0_heights(data),
     )
 
     c.setStrokeColor(colors.HexColor("#DDDDDD"))
