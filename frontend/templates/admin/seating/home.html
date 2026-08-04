@@ -469,11 +469,30 @@
       <div class="legend">
         Drag seats to rearrange · Click 🔒 to lock/unlock · Click ✕ to unassign
       </div>
-      <div style="display:flex; align-items:center; gap:1rem;">
+      <div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
         <span class="save-status" id="save-status">No unsaved changes</span>
         <button class="btn btn-primary" id="save-btn" onclick="saveCanvas()" disabled>
           Save seating
         </button>
+        {% if assignments %}
+        <span style="font-size:.82rem; display:inline-flex; align-items:center; gap:.3rem;">
+          {% if seating_accepted_stale_because is none %}
+            <span style="color:var(--ink-muted);" aria-hidden="true">&#9675;</span>
+            <span style="color:var(--ink-muted);">Not yet accepted</span>
+          {% elif seating_accepted %}
+            <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
+            <span style="color:var(--ink-muted);">Accepted {{ event.seating_accepted_at.strftime('%b %d') }}</span>
+          {% else %}
+            <span style="color:var(--gold);" aria-hidden="true">&#9888;</span>
+            <span style="color:var(--gold);">Chart changed since acceptance -- accept again if this is ready</span>
+          {% endif %}
+        </span>
+        <form method="POST" action="{{ url_for('seating.accept_seating', event_id=event.id) }}" style="display:inline;">
+          <button class="btn btn-outline" type="submit" id="accept-btn">
+            Accept Final Seating Plan
+          </button>
+        </form>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -772,6 +791,8 @@ function markDirty() {
   st.textContent = 'Unsaved changes';
   st.className = 'save-status dirty';
   document.getElementById('save-btn').disabled = false;
+  const acceptBtn = document.getElementById('accept-btn');
+  if (acceptBtn) acceptBtn.disabled = true;
 }
 
 async function saveCanvas() {
@@ -808,8 +829,15 @@ async function saveCanvas() {
     const data = await r.json();
     if (data.ok) {
       isDirty = false;
+      const acceptBtn = document.getElementById('accept-btn');
+      if (acceptBtn) acceptBtn.disabled = false;
+      if (data.seating_was_accepted) {
+        st.textContent = 'Saved -- seating was previously accepted; check Table Name Cards & Charts/Lists on the Print screen';
+        st.className = 'save-status dirty';
+      } else {
       st.textContent = 'Saved ✓';
-      st.className = 'save-status saved';
+        st.className = 'save-status saved';
+      }
     } else {
       throw new Error(data.error || 'Unknown error');
     }
