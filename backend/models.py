@@ -205,6 +205,21 @@ class Event(db.Model):
     # e.g. {"not_together": [[1,2],[3,4]], "prefer_together": [[5,6]],
     #        "custom": ["Keep the head table near the entrance"]}
 
+    # Explicit "this specific thing changed" markers, set only at the exact
+    # moment each one actually happens (wine upload, menu upload, officer
+    # ranking saved, booklet generated) -- deliberately separate from the
+    # generic updated_at below, which fires on any edit to the event at all
+    # and would be useless for telling whether the booklet is stale
+    # relative to one specific dependency.
+    wine_list_updated_at        = db.Column(db.DateTime, nullable=True)
+    menu_updated_at             = db.Column(db.DateTime, nullable=True)
+    officer_ranking_updated_at  = db.Column(db.DateTime, nullable=True)
+    booklet_generated_at        = db.Column(db.DateTime, nullable=True)
+    seating_updated_at          = db.Column(db.DateTime, nullable=True)
+    table_cards_generated_at    = db.Column(db.DateTime, nullable=True)
+    charts_generated_at         = db.Column(db.DateTime, nullable=True)
+    seating_accepted_at         = db.Column(db.DateTime, nullable=True)
+
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow,
                                 onupdate=datetime.utcnow)
@@ -270,6 +285,70 @@ class Event(db.Model):
              for tag in tags.values()],
             key=lambda t: t["tag"].label.lower()
         )
+
+    @property
+    def menu_uploaded(self):
+        """Whether a menu has been uploaded for this event -- replaces the
+        old manual "menu finalized" checkbox, which required a separate,
+        easy-to-forget click disconnected from actually uploading the menu
+        itself."""
+        return MenuItem.query.filter_by(event_id=self.id).first() is not None
+
+    def booklet_is_current(self):
+        """Whether the last-generated menu booklet still reflects this
+        event's current wine list, menu, and officer ranking. Returns
+        (is_current, stale_because) -- stale_because is a list of
+        plain-English names of whichever dependencies changed after the
+        booklet was last generated, empty if it's current, and None
+        specifically if it's never been generated at all (a different
+        situation from "generated, now stale")."""
+        if not self.booklet_generated_at:
+            return False, None
+        stale_because = []
+        if self.wine_list_updated_at and self.wine_list_updated_at > self.booklet_generated_at:
+            stale_because.append("wine list")
+        if self.menu_updated_at and self.menu_updated_at > self.booklet_generated_at:
+            stale_because.append("menu")
+        if self.officer_ranking_updated_at and self.officer_ranking_updated_at > self.booklet_generated_at:
+            stale_because.append("officer ranking")
+        return (len(stale_because) == 0), stale_because
+
+    def table_cards_is_current(self):
+        """Whether the last-generated table name cards still reflect this
+        event's current seating chart. Same shape as booklet_is_current(),
+        but with a single dependency."""
+        if not self.table_cards_generated_at:
+            return False, None
+        if self.seating_updated_at and self.seating_updated_at > self.table_cards_generated_at:
+            return False, ["seating chart"]
+        return True, []
+
+    def charts_is_current(self):
+        """Whether the charts & lists views were printed after the current
+        seating chart was last generated/edited. "Printed" here means the
+        print button was clicked while viewing one of the four bundled
+        tabs (visual chart, by table, alphabetical, table + allergies) --
+        the browser's own print dialog after that click isn't something
+        the server can observe, so the click itself is the signal."""
+        if not self.charts_generated_at:
+            return False, None
+        if self.seating_updated_at and self.seating_updated_at > self.charts_generated_at:
+            return False, ["seating chart"]
+        return True, []
+
+    def seating_is_accepted(self):
+        """Whether the seating plan has been explicitly accepted (the one
+        deliberate, non-automatic milestone -- generating or editing a
+        chart is never enough on its own), and whether that acceptance is
+        still current relative to the chart's own last-changed timestamp.
+        Regenerating, clearing, or manually re-saving the chart after
+        acceptance resets this back to unaccepted -- there's no "stale but
+        still counts" state here, unlike the printed materials."""
+        if not self.seating_accepted_at:
+            return False, None
+        if self.seating_updated_at and self.seating_updated_at > self.seating_accepted_at:
+            return False, ["seating chart"]
+        return True, []
 
     def __repr__(self):
         return f"<Event {self.id} '{self.title}' {self.event_date.date()}>"

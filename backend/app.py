@@ -127,6 +127,14 @@ def _auto_migrate():
         ("rsvp_guests", "officer_title", "VARCHAR(200)"),
         ("rsvp_guests", "officer_rank",  "INTEGER"),
         ("wine_tags", "color", "VARCHAR(10)"),
+        ("events", "wine_list_updated_at",       "DATETIME"),
+        ("events", "menu_updated_at",             "DATETIME"),
+        ("events", "officer_ranking_updated_at",  "DATETIME"),
+        ("events", "booklet_generated_at",        "DATETIME"),
+        ("events", "seating_updated_at",           "DATETIME"),
+        ("events", "table_cards_generated_at",      "DATETIME"),
+        ("events", "charts_generated_at",           "DATETIME"),
+        ("events", "seating_accepted_at",           "DATETIME"),
     ]
     with db.engine.connect() as conn:
         for table, column, col_type in migrations:
