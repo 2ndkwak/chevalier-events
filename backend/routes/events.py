@@ -380,6 +380,21 @@ def allergies(event_id):
                            event=event, tag_rows=tag_rows, guests=guests)
 
 
+@events_bp.route("/<int:event_id>/allergies/mark_reviewed", methods=["POST"])
+@login_required
+@admin_required
+def mark_allergies_reviewed(event_id):
+    """The one deliberately non-automatic step for this milestone --
+    confirms the GS has looked over the current allergy list and
+    considers it correct for this event. Deliberately never resets on its
+    own; see Event.allergies_reviewed."""
+    event = Event.query.get_or_404(event_id)
+    event.allergies_reviewed_at = datetime.utcnow()
+    db.session.commit()
+    flash("Allergy list marked correct for event.", "success")
+    return redirect(url_for("events.allergies", event_id=event_id))
+
+
 @events_bp.route("/<int:event_id>/allergies/toggle", methods=["POST"])
 @login_required
 @admin_required

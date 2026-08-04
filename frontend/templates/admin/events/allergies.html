@@ -11,6 +11,23 @@
   {{ event.title }} &nbsp;&middot;&nbsp; {{ event.event_date.strftime('%B %d, %Y') }}
 </p>
 
+<div style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap; margin-bottom:1.2rem;">
+  <span style="font-size:.85rem; display:inline-flex; align-items:center; gap:.35rem;">
+    {% if event.allergies_reviewed %}
+      <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
+      <span style="color:var(--ink-muted);">Marked correct {{ event.allergies_reviewed_at.strftime('%b %d') }}</span>
+    {% else %}
+      <span style="color:var(--ink-muted);" aria-hidden="true">&#9675;</span>
+      <span style="color:var(--ink-muted);">Not yet marked correct</span>
+    {% endif %}
+  </span>
+  <form method="POST" action="{{ url_for('events.mark_allergies_reviewed', event_id=event.id) }}" style="display:inline;">
+    <button class="btn btn-outline" type="submit">
+      Allergy List Now Correct for Event
+    </button>
+  </form>
+</div>
+
 <div class="card" style="margin-bottom:1.2rem;">
   <div class="card-title">Allergies relevant tonight</div>
   <p class="text-muted text-sm" style="margin-top:0;">

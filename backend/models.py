@@ -219,6 +219,7 @@ class Event(db.Model):
     table_cards_generated_at    = db.Column(db.DateTime, nullable=True)
     charts_generated_at         = db.Column(db.DateTime, nullable=True)
     seating_accepted_at         = db.Column(db.DateTime, nullable=True)
+    allergies_reviewed_at       = db.Column(db.DateTime, nullable=True)
 
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow,
@@ -349,6 +350,15 @@ class Event(db.Model):
         if self.seating_updated_at and self.seating_updated_at > self.seating_accepted_at:
             return False, ["seating chart"]
         return True, []
+
+    @property
+    def allergies_reviewed(self):
+        """Whether the GS has explicitly confirmed the allergy list is
+        correct for this event. Deliberately one-way -- unlike the printed
+        materials, this never auto-resets when RSVPs or tags change; the
+        GS is expected to handle those changes by judgment, the same way
+        they already handle late seating changes after RSVPs close."""
+        return self.allergies_reviewed_at is not None
 
     def __repr__(self):
         return f"<Event {self.id} '{self.title}' {self.event_date.date()}>"

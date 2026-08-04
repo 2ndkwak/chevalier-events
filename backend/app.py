@@ -135,6 +135,7 @@ def _auto_migrate():
         ("events", "table_cards_generated_at",      "DATETIME"),
         ("events", "charts_generated_at",           "DATETIME"),
         ("events", "seating_accepted_at",           "DATETIME"),
+        ("events", "allergies_reviewed_at",         "DATETIME"),
     ]
     with db.engine.connect() as conn:
         for table, column, col_type in migrations:
