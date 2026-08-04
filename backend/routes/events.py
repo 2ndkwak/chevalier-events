@@ -474,7 +474,9 @@ def _event_from_form(event, form):
     if paypal_link and not paypal_link.lower().startswith(("http://", "https://")):
         paypal_link = "https://" + paypal_link
     event.paypal_link = paypal_link or None
-    event.menu_finalized = bool(form.get("menu_finalized"))
+    # menu_finalized no longer read/written here -- Event.menu_uploaded
+    # (whether any MenuItem rows exist) replaced it as the dashboard's
+    # signal, so there's nothing left for this checkbox to control.
     paypal_price_str = form.get("paypal_price_per_person", "").strip()
     if paypal_price_str:
         try:

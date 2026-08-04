@@ -168,12 +168,6 @@
                min="0" step="0.01" placeholder="Usually a few dollars more"
                value="{{ '%.2f'|format(event.paypal_price_per_person|float) if event and event.paypal_price_per_person else '' }}">
       </div>
-      <div class="form-group" style="display:flex; align-items:center; gap:.5rem; padding-top:1.6rem;">
-        <input type="checkbox" id="menu_finalized" name="menu_finalized" value="1"
-               style="width:auto;"
-               {{ 'checked' if event and event.menu_finalized else '' }}>
-        <label for="menu_finalized" style="margin:0;">Menu finalized with chef</label>
-      </div>
     </div>
 
     <hr class="divider">
