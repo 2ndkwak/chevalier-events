@@ -460,10 +460,7 @@
 <div class="materials-bar">
   <span class="materials-label">Pre-event materials:</span>
   {{ material_status("Menu booklet", booklet_current, booklet_stale_because, event.booklet_generated_at) }}
-  <label>
-    <input type="checkbox" data-material="wine_tags" {{ 'checked' if 'wine_tags' in checked_materials else '' }}>
-    Wine tags
-  </label>
+  {{ material_status("Wine tags", wine_tags_current, wine_tags_stale_because, event.wine_tags_generated_at) }}
   {{ material_status("Table name cards", table_cards_current, table_cards_stale_because, event.table_cards_generated_at) }}
   <label>
     <input type="checkbox" data-material="name_badges" {{ 'checked' if 'name_badges' in checked_materials else '' }}>

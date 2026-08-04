@@ -220,6 +220,7 @@ class Event(db.Model):
     charts_generated_at         = db.Column(db.DateTime, nullable=True)
     seating_accepted_at         = db.Column(db.DateTime, nullable=True)
     allergies_reviewed_at       = db.Column(db.DateTime, nullable=True)
+    wine_tags_generated_at      = db.Column(db.DateTime, nullable=True)
 
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow,
@@ -349,6 +350,16 @@ class Event(db.Model):
             return False, None
         if self.seating_updated_at and self.seating_updated_at > self.seating_accepted_at:
             return False, ["seating chart"]
+        return True, []
+
+    def wine_tags_is_current(self):
+        """Whether the last-generated wine tags still reflect this event's
+        current wine list. Same shape as table_cards_is_current(), with a
+        single dependency."""
+        if not self.wine_tags_generated_at:
+            return False, None
+        if self.wine_list_updated_at and self.wine_list_updated_at > self.wine_tags_generated_at:
+            return False, ["wine list"]
         return True, []
 
     @property

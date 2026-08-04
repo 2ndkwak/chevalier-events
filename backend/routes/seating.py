@@ -685,6 +685,7 @@ def print_seating(event_id):
     booklet_current, booklet_stale_because = event.booklet_is_current()
     table_cards_current, table_cards_stale_because = event.table_cards_is_current()
     charts_current, charts_stale_because = event.charts_is_current()
+    wine_tags_current, wine_tags_stale_because = event.wine_tags_is_current()
 
     from datetime import datetime
     return render_template(
@@ -703,6 +704,8 @@ def print_seating(event_id):
         table_cards_stale_because = table_cards_stale_because,
         charts_current = charts_current,
         charts_stale_because = charts_stale_because,
+        wine_tags_current = wine_tags_current,
+        wine_tags_stale_because = wine_tags_stale_because,
     )
 
 
@@ -717,11 +720,12 @@ def toggle_material(event_id):
     and "reviewed and ready" are deliberately different moments."""
     data = request.get_json(force=True)
     key = data.get("material_key")
-    # menu_booklet, table_name_cards, and charts_and_lists are deliberately
-    # excluded -- they're no longer manually toggled items; their status is
-    # computed from Event.booklet_is_current(), .table_cards_is_current(),
-    # and .charts_is_current().
-    valid_keys = {"wine_tags", "name_badges"}
+    # menu_booklet, table_name_cards, charts_and_lists, and wine_tags are
+    # deliberately excluded -- they're no longer manually toggled items;
+    # their status is computed from Event.booklet_is_current(),
+    # .table_cards_is_current(), .charts_is_current(), and
+    # .wine_tags_is_current().
+    valid_keys = {"name_badges"}
     if key not in valid_keys:
         return jsonify({"ok": False, "error": "Invalid material key"}), 400
 
@@ -1043,6 +1047,9 @@ def print_wine_tags(event_id):
     except Exception as e:
         flash(f"Wine tag generation failed: {e}", "error")
         return redirect(url_for("seating.wine_tags", event_id=event_id))
+
+    event.wine_tags_generated_at = datetime.utcnow()
+    db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
     filename = f"WineTags_{safe_title}.pdf"
