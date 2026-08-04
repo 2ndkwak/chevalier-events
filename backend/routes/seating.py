@@ -3,6 +3,7 @@ from flask import (Blueprint, render_template, redirect, url_for,
 from flask_login import login_required, current_user
 from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, EventMaterial, MenuItem, EventCourse
 from ..routes.admin import admin_required
+from datetime import datetime
 import json
 import sys
 
@@ -50,6 +51,8 @@ def seating_home(event_id):
             if partner:
                 couple_name_map[partner.id] = label
 
+    seating_accepted, seating_accepted_stale_because = event.seating_is_accepted()
+
     return render_template("admin/seating/home.html",
                            event=event,
                            global_rules=global_rules,
@@ -57,7 +60,9 @@ def seating_home(event_id):
                            attendees=attendees,
                            couples=couples,
                            couple_name_map=couple_name_map,
-                           assignments=assignments)
+                           assignments=assignments,
+                           seating_accepted=seating_accepted,
+                           seating_accepted_stale_because=seating_accepted_stale_because)
 
 
 # --- SAVE PER-EVENT RULES -----------------------------------------------------
@@ -453,8 +458,14 @@ def propose_seating_fast(event_id):
             party_table, unplaced = _consolidate_for_unplaced(
                 parties, party_table, tables, unplaced, locked)
 
+        was_accepted, _ = event.seating_is_accepted()
         _assign_seats_from_party_tables(event_id, parties, party_table, locked)
+        event.seating_updated_at = datetime.utcnow()
         db.session.commit()
+        if was_accepted:
+            flash("The seating plan was previously accepted -- Table Name Cards and "
+                  "Charts & Lists may now be out of date. Check the Print screen "
+                  "before reprinting anything you don't need to redo yet.", "warning")
 
         fixes = _enforce_rules(event_id, couples)
         msg = "Seating proposal generated successfully. Review and adjust as needed."
@@ -495,13 +506,20 @@ def propose_seating_fast(event_id):
 @login_required
 @admin_required
 def clear_seating(event_id):
+    event = Event.query.get_or_404(event_id)
+    was_accepted, _ = event.seating_is_accepted()
     keep_locked = request.form.get("keep_locked") == "1"
     q = SeatAssignment.query.filter_by(event_id=event_id)
     if keep_locked:
         q = q.filter_by(is_locked=False)
     q.delete()
+    event.seating_updated_at = datetime.utcnow()
     db.session.commit()
     flash("Seating cleared." + (" Locked seats retained." if keep_locked else ""), "success")
+    if was_accepted:
+        flash("The seating plan was previously accepted -- Table Name Cards and "
+              "Charts & Lists may now be out of date. Check the Print screen "
+              "before reprinting anything you don't need to redo yet.", "warning")
     return redirect(url_for("seating.seating_home", event_id=event_id))
 
 
@@ -517,6 +535,8 @@ def save_canvas(event_id):
     data = request.get_json(force=True)
     if not data or "tables" not in data:
         return jsonify({"ok": False, "error": "Invalid payload"}), 400
+
+    was_accepted, _ = event.seating_is_accepted()
 
     # Delete all unlocked assignments for this event
     SeatAssignment.query.filter_by(event_id=event_id, is_locked=False).delete()
@@ -540,8 +560,9 @@ def save_canvas(event_id):
                 )
                 db.session.add(sa)
 
+    event.seating_updated_at = datetime.utcnow()
     db.session.commit()
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "seating_was_accepted": was_accepted})
 
 
 # --- TOGGLE SEAT LOCK ---------------------------------------------------------
@@ -561,6 +582,36 @@ def toggle_lock(event_id):
     sa.is_locked = not sa.is_locked
     db.session.commit()
     return jsonify({"ok": True, "is_locked": sa.is_locked})
+
+
+@seating_bp.route("/event/<int:event_id>/accept_seating", methods=["POST"])
+@login_required
+@admin_required
+def accept_seating(event_id):
+    """The one deliberately non-automatic milestone -- confirms the GS has
+    reviewed the current seating chart and is satisfied with it. Resets
+    automatically (via Event.seating_is_accepted()) the moment the chart
+    is regenerated, cleared, or manually re-saved afterward."""
+    event = Event.query.get_or_404(event_id)
+    event.seating_accepted_at = datetime.utcnow()
+    db.session.commit()
+    flash("Final seating plan accepted.", "success")
+    return redirect(url_for("seating.seating_home", event_id=event_id))
+
+
+@seating_bp.route("/event/<int:event_id>/mark_charts_printed", methods=["POST"])
+@login_required
+@admin_required
+def mark_charts_printed(event_id):
+    """Pinged by the print button's own click handler, only when one of the
+    four bundled charts/lists tabs (visual, by table, alphabetical,
+    table+allergies) is the one being printed -- the browser's own print
+    dialog after that click is invisible to the server, so the click
+    itself is the signal used here."""
+    event = Event.query.get_or_404(event_id)
+    event.charts_generated_at = datetime.utcnow()
+    db.session.commit()
+    return jsonify({"ok": True})
 
 
 # --- PRINT PAGE ---------------------------------------------------------------
@@ -631,6 +682,10 @@ def print_seating(event_id):
     tables_meta = sorted(event.table_config["tables"], key=lambda t: t["id"])
     guest_count = sum(1 for s in seats if s["is_guest"])
 
+    booklet_current, booklet_stale_because = event.booklet_is_current()
+    table_cards_current, table_cards_stale_because = event.table_cards_is_current()
+    charts_current, charts_stale_because = event.charts_is_current()
+
     from datetime import datetime
     return render_template(
         "admin/seating/print.html",
@@ -642,6 +697,12 @@ def print_seating(event_id):
         guest_count = guest_count,
         now         = datetime.now().strftime("%B %d, %Y"),
         checked_materials = checked_materials,
+        booklet_current = booklet_current,
+        booklet_stale_because = booklet_stale_because,
+        table_cards_current = table_cards_current,
+        table_cards_stale_because = table_cards_stale_because,
+        charts_current = charts_current,
+        charts_stale_because = charts_stale_because,
     )
 
 
@@ -656,8 +717,11 @@ def toggle_material(event_id):
     and "reviewed and ready" are deliberately different moments."""
     data = request.get_json(force=True)
     key = data.get("material_key")
-    valid_keys = {"menu_booklet", "wine_tags", "table_name_cards",
-                  "name_badges", "charts_and_lists"}
+    # menu_booklet, table_name_cards, and charts_and_lists are deliberately
+    # excluded -- they're no longer manually toggled items; their status is
+    # computed from Event.booklet_is_current(), .table_cards_is_current(),
+    # and .charts_is_current().
+    valid_keys = {"wine_tags", "name_badges"}
     if key not in valid_keys:
         return jsonify({"ok": False, "error": "Invalid material key"}), 400
 
@@ -723,6 +787,9 @@ def export_namecards(event_id):
     except Exception as e:
         flash(f"Export failed: {e}", "error")
         return redirect(url_for("seating.print_seating", event_id=event_id))
+
+    event.table_cards_generated_at = datetime.utcnow()
+    db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
     filename = f"NameCards_{safe_title}.docx"
@@ -887,6 +954,7 @@ def wine_tags(event_id):
                         WineTag.query.filter_by(event_id=event_id).delete()
                         for w in new_wines:
                             db.session.add(WineTag(event_id=event_id, **w))
+                        event.wine_list_updated_at = datetime.utcnow()
                         db.session.commit()
                         flash(f"Wine list saved -- {len(new_wines)} wines.", "success")
                         return redirect(url_for("seating.wine_tags", event_id=event_id))
@@ -1111,6 +1179,7 @@ def menu_items(event_id):
                                 db.session.add(EventCourse(event_id=event_id,
                                                            course=course_num, label=label))
 
+                        event.menu_updated_at = datetime.utcnow()
                         db.session.commit()
                         flash(f"Menu saved -- {len(new_items)} course(s).", "success")
                         return redirect(url_for("seating.menu_items", event_id=event_id))
@@ -1181,6 +1250,7 @@ def officer_ranking(event_id):
                 g = RSVPGuest.query.get(gid)
                 if g:
                     g.officer_rank = rank
+        event.officer_ranking_updated_at = datetime.utcnow()
         db.session.commit()
         flash("Officer ranking saved.", "success")
         return redirect(url_for("seating.officer_ranking", event_id=event_id))
@@ -1469,6 +1539,9 @@ def generate_booklet(event_id):
     except Exception as e:
         flash(f"Booklet generation failed: {e}", "error")
         return redirect(url_for("seating.menu_items", event_id=event_id))
+
+    event.booklet_generated_at = datetime.utcnow()
+    db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
     filename = f"MenuBooklet_{safe_title}.pdf"
