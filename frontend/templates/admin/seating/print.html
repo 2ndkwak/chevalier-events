@@ -442,28 +442,34 @@
 </div>
 
 <!-- ── Pre-event materials checklist (persists across all tabs) ────────────── -->
+{% macro material_status(label, current, stale_because, done_at, verb='generated') %}
+<span class="material-status" style="display:inline-flex; align-items:center; gap:.35rem; font-size:.85rem;">
+  {% if stale_because is none %}
+    <span style="color:var(--ink-muted);" aria-hidden="true">&#9675;</span>
+    {{ label }} <span style="color:var(--ink-muted); font-size:.78rem;">(not yet {{ verb }})</span>
+  {% elif current %}
+    <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
+    {{ label }} <span style="color:var(--ink-muted); font-size:.78rem;">({{ verb }} {{ done_at.strftime('%b %d') }})</span>
+  {% else %}
+    <span style="color:var(--gold);" aria-hidden="true">&#9888;</span>
+    {{ label }} <span style="color:var(--gold); font-size:.78rem;">({{ stale_because|join('/') }} changed since {{ verb }} {{ done_at.strftime('%b %d') }} -- worth doing again)</span>
+  {% endif %}
+</span>
+{% endmacro %}
+
 <div class="materials-bar">
   <span class="materials-label">Pre-event materials:</span>
-  <label>
-    <input type="checkbox" data-material="menu_booklet" {{ 'checked' if 'menu_booklet' in checked_materials else '' }}>
-    Menu booklet
-  </label>
+  {{ material_status("Menu booklet", booklet_current, booklet_stale_because, event.booklet_generated_at) }}
   <label>
     <input type="checkbox" data-material="wine_tags" {{ 'checked' if 'wine_tags' in checked_materials else '' }}>
     Wine tags
   </label>
-  <label>
-    <input type="checkbox" data-material="table_name_cards" {{ 'checked' if 'table_name_cards' in checked_materials else '' }}>
-    Table name cards
-  </label>
+  {{ material_status("Table name cards", table_cards_current, table_cards_stale_because, event.table_cards_generated_at) }}
   <label>
     <input type="checkbox" data-material="name_badges" {{ 'checked' if 'name_badges' in checked_materials else '' }}>
     Name badges
   </label>
-  <label>
-    <input type="checkbox" data-material="charts_and_lists" {{ 'checked' if 'charts_and_lists' in checked_materials else '' }}>
-    Charts &amp; lists
-  </label>
+  {{ material_status("Charts & lists", charts_current, charts_stale_because, event.charts_generated_at, verb='printed') }}
 </div>
 
 <!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
@@ -754,6 +760,16 @@
     // Mark the active section for @media print
     document.querySelectorAll('.print-section').forEach(s => s.classList.remove('printing'));
     document.getElementById(tabSectionMap[currentTab]).classList.add('printing');
+
+    // The four bundled "charts & lists" tabs -- Name Badges and Table Name
+    // Cards each have their own real generated download elsewhere, so they
+    // don't ping this. The browser's print dialog after window.print() is
+    // invisible to the server, so this click is the only signal available.
+    const chartsAndListsTabs = ['visual', 'by-table', 'alpha', 'by-table-allergy'];
+    if (chartsAndListsTabs.includes(currentTab)) {
+      fetch("{{ url_for('seating.mark_charts_printed', event_id=event.id) }}", { method: "POST" });
+    }
+
     window.print();
   }
 
