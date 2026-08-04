@@ -125,7 +125,7 @@ def dashboard():
 def _next_action_for_event(event, today):
     """One-line status for the dashboard's upcoming events table, reflecting
     where this event currently sits in the Grand Senechal's workflow."""
-    if not event.menu_finalized:
+    if not event.menu_uploaded:
         return "Waiting on chef's menu proposal"
     if not event.price_per_person:
         return "Set pricing & PayPal link"
@@ -138,7 +138,17 @@ def _next_action_for_event(event, today):
         return f"Promoting -- {event.confirmed_count} confirmed, {waitlist_count} waitlist"
 
     materials_total = 5
-    materials_done = len(event.materials)
+    # Menu booklet is no longer one of the manually-checked materials --
+    # it's computed from whether it's actually been generated since the
+    # wine list, menu, and officer ranking were last touched (see
+    # Event.booklet_is_current()). Exclude any leftover manually-checked
+    # "menu_booklet" row here so it's never counted twice.
+    computed_keys = {"menu_booklet", "table_name_cards", "charts_and_lists"}
+    materials_done = sum(1 for m in event.materials if m.material_key not in computed_keys)
+    booklet_current, _ = event.booklet_is_current()
+    table_cards_current, _ = event.table_cards_is_current()
+    charts_current, _ = event.charts_is_current()
+    materials_done += sum([booklet_current, table_cards_current, charts_current])
     if materials_done < materials_total:
         return f"Materials: {materials_done} of {materials_total} done"
 
