@@ -276,6 +276,16 @@
     .data-table tr:hover td { background: var(--gold-pale); }
     .data-table .actions { display: flex; gap: .4rem; }
 
+    /* ── Milestone dot-strip ─────────────────────────────────────────── */
+    .milestone-strip { display: flex; gap: .28rem; margin-top: .3rem; flex-wrap: wrap; }
+    .milestone-dot {
+      width: .55rem; height: .55rem; border-radius: 50%; display: inline-block;
+      cursor: default;
+    }
+    .milestone-dot.done     { background: var(--success); }
+    .milestone-dot.stale    { background: var(--danger); }
+    .milestone-dot.not_done { background: transparent; border: 1.5px solid var(--ink-muted); }
+
     /* ── Badges ───────────────────────────────────────────────────────── */
     .badge {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

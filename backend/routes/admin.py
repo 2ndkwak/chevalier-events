@@ -107,6 +107,7 @@ def dashboard():
                           .limit(6).all())
 
     next_actions = {e.id: _next_action_for_event(e, today) for e in upcoming}
+    milestone_dots = {e.id: e.milestone_dots() for e in upcoming}
 
     return render_template("admin/dashboard.html",
                            upcoming=upcoming,
@@ -119,7 +120,8 @@ def dashboard():
                            outstanding_invites_more=outstanding_invites_more,
                            roster_changes=roster_changes,
                            dietary_edits=dietary_edits,
-                           next_actions=next_actions)
+                           next_actions=next_actions,
+                           milestone_dots=milestone_dots)
 
 
 def _next_action_for_event(event, today):

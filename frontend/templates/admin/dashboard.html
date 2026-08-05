@@ -40,6 +40,14 @@
             {% if next_actions and next_actions.get(event.id) %}
             <div class="text-muted text-sm" style="margin-top:.15rem;">{{ next_actions[event.id] }}</div>
             {% endif %}
+            {% if milestone_dots and milestone_dots.get(event.id) %}
+            <div class="milestone-strip">
+              {% for dot in milestone_dots[event.id] %}
+              <span class="milestone-dot {{ dot.state }}"
+                    title="{{ dot.label }}{% if dot.stale_because %} — {{ dot.stale_because|join('/') }} changed{% endif %}"></span>
+              {% endfor %}
+            </div>
+            {% endif %}
           </td>
           <td>{{ event.event_date.strftime("%B %d, %Y") }}</td>
           <td>{{ event.venue_name or '—' }}</td>

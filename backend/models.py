@@ -413,6 +413,59 @@ class Event(db.Model):
         they already handle late seating changes after RSVPs close."""
         return self.allergies_reviewed_at is not None
 
+    def milestone_dots(self, now=None):
+        """The 13-item dashboard dot-strip, in fixed display order. Returns
+        a list of dicts: {"label", "state", "stale_because"}.
+
+        "state" is one of "done" / "not_done" / "stale". Only the five
+        milestones with a real staleness concept (Menu Booklet, Table Name
+        Cards, Charts & Lists, Wine Tags, Seating Plan Accepted) can ever
+        report "stale" -- the other eight are two-state only, per Trey's
+        design call. "stale_because" is only ever populated (non-None) for
+        a "stale" dot; it's None for every not_done/done dot, including
+        Name Badges, whose underlying name_badges_is_current() returns the
+        same (bool, list) tuple shape as the staleness methods but is
+        semantically two-state -- once generated it never goes stale, so
+        only the bool half of that tuple is used here.
+
+        This method is purely an aggregator over existing properties/
+        methods; it introduces no new business logic of its own, so any
+        change to what a milestone *means* belongs on that milestone's own
+        property/method, not here.
+        """
+        now = now or datetime.utcnow()
+
+        def two_state(label, done):
+            return {"label": label,
+                    "state": "done" if done else "not_done",
+                    "stale_because": None}
+
+        def staleness(label, is_current_result):
+            current, stale_because = is_current_result
+            if stale_because is None:
+                return {"label": label, "state": "not_done", "stale_because": None}
+            if current:
+                return {"label": label, "state": "done", "stale_because": None}
+            return {"label": label, "state": "stale", "stale_because": stale_because}
+
+        reservations_closed = bool(self.rsvp_deadline and now > self.rsvp_deadline)
+
+        return [
+            two_state("Published", self.is_published),
+            two_state("Promoted", self.promoted),
+            two_state("Menu Uploaded", self.menu_uploaded),
+            two_state("Wines Uploaded", bool(self.wine_tags)),
+            two_state("Reservations Closed", reservations_closed),
+            staleness("Seating Plan Accepted", self.seating_is_accepted()),
+            two_state("Officers Ranked", self.officers_ranked),
+            two_state("Allergies Reviewed", self.allergies_reviewed),
+            staleness("Wine Tags", self.wine_tags_is_current()),
+            staleness("Menu Booklet", self.booklet_is_current()),
+            staleness("Table Name Cards", self.table_cards_is_current()),
+            two_state("Name Badges", self.name_badges_is_current()[0]),
+            staleness("Charts & Lists", self.charts_is_current()),
+        ]
+
     def __repr__(self):
         return f"<Event {self.id} '{self.title}' {self.event_date.date()}>"
 
