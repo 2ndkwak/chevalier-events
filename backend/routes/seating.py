@@ -1,7 +1,7 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, jsonify, current_app)
 from flask_login import login_required, current_user
-from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, EventMaterial, MenuItem, EventCourse
+from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, MenuItem, EventCourse
 from ..routes.admin import admin_required
 from datetime import datetime
 import json
@@ -636,10 +636,6 @@ def print_seating(event_id):
     # only these show up as flags on the seating chart, never the free-text note.
     off_ids = {r.tag_id for r in EventAllergyOff.query.filter_by(event_id=event_id).all()}
 
-    # Pre-event materials checklist -- which items the GS has already
-    # checked off as prepared for this event.
-    checked_materials = {m.material_key for m in EventMaterial.query.filter_by(event_id=event_id).all()}
-
     # Build enriched seat list
     seats = []
     for sa in assignments:
@@ -686,6 +682,7 @@ def print_seating(event_id):
     table_cards_current, table_cards_stale_because = event.table_cards_is_current()
     charts_current, charts_stale_because = event.charts_is_current()
     wine_tags_current, wine_tags_stale_because = event.wine_tags_is_current()
+    name_badges_current, name_badges_stale_because = event.name_badges_is_current()
 
     from datetime import datetime
     return render_template(
@@ -697,7 +694,6 @@ def print_seating(event_id):
         tables_meta = tables_meta,
         guest_count = guest_count,
         now         = datetime.now().strftime("%B %d, %Y"),
-        checked_materials = checked_materials,
         booklet_current = booklet_current,
         booklet_stale_because = booklet_stale_because,
         table_cards_current = table_cards_current,
@@ -706,38 +702,9 @@ def print_seating(event_id):
         charts_stale_because = charts_stale_because,
         wine_tags_current = wine_tags_current,
         wine_tags_stale_because = wine_tags_stale_because,
+        name_badges_current = name_badges_current,
+        name_badges_stale_because = name_badges_stale_because,
     )
-
-
-# --- MATERIALS CHECKLIST TOGGLE -----------------------------------------------
-
-@seating_bp.route("/event/<int:event_id>/materials/toggle", methods=["POST"])
-@login_required
-@admin_required
-def toggle_material(event_id):
-    """Check/uncheck one pre-event material as prepared. Manual only --
-    never set automatically by generating a document, since "generated"
-    and "reviewed and ready" are deliberately different moments."""
-    data = request.get_json(force=True)
-    key = data.get("material_key")
-    # menu_booklet, table_name_cards, charts_and_lists, and wine_tags are
-    # deliberately excluded -- they're no longer manually toggled items;
-    # their status is computed from Event.booklet_is_current(),
-    # .table_cards_is_current(), .charts_is_current(), and
-    # .wine_tags_is_current().
-    valid_keys = {"name_badges"}
-    if key not in valid_keys:
-        return jsonify({"ok": False, "error": "Invalid material key"}), 400
-
-    existing = EventMaterial.query.filter_by(event_id=event_id, material_key=key).first()
-    if existing:
-        db.session.delete(existing)
-        checked = False
-    else:
-        db.session.add(EventMaterial(event_id=event_id, material_key=key))
-        checked = True
-    db.session.commit()
-    return jsonify({"ok": True, "checked": checked})
 
 
 # --- EXPORT NAME CARDS (Avery 5011 .docx) ------------------------------------
@@ -849,6 +816,9 @@ def export_namebadges(event_id):
     except Exception as e:
         flash(f"Export failed: {e}", "error")
         return redirect(url_for("seating.print_seating", event_id=event_id))
+
+    event.name_badges_generated_at = datetime.utcnow()
+    db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
     filename = f"NameBadges_{safe_title}.pdf"

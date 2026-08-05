@@ -462,10 +462,7 @@
   {{ material_status("Menu booklet", booklet_current, booklet_stale_because, event.booklet_generated_at) }}
   {{ material_status("Wine tags", wine_tags_current, wine_tags_stale_because, event.wine_tags_generated_at) }}
   {{ material_status("Table name cards", table_cards_current, table_cards_stale_because, event.table_cards_generated_at) }}
-  <label>
-    <input type="checkbox" data-material="name_badges" {{ 'checked' if 'name_badges' in checked_materials else '' }}>
-    Name badges
-  </label>
+  {{ material_status("Name badges", name_badges_current, name_badges_stale_because, event.name_badges_generated_at) }}
   {{ material_status("Charts & lists", charts_current, charts_stale_because, event.charts_generated_at, verb='printed') }}
 </div>
 
@@ -770,29 +767,6 @@
     window.print();
   }
 
-  // ── Materials checklist: save on toggle, no page reload ─────────────────
-  document.querySelectorAll('.materials-bar input[type="checkbox"]').forEach(cb => {
-    cb.addEventListener('change', function() {
-      const key = this.dataset.material;
-      const wasChecked = this.checked;
-      fetch("{{ url_for('seating.toggle_material', event_id=event.id) }}", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ material_key: key })
-      })
-        .then(r => r.json())
-        .then(data => {
-          if (!data.ok) {
-            this.checked = !wasChecked;
-            alert("Could not save -- please try again.");
-          }
-        })
-        .catch(() => {
-          this.checked = !wasChecked;
-          alert("Could not save -- please try again.");
-        });
-    });
-  });
 </script>
 </body>
 </html>

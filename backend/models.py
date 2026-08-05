@@ -222,6 +222,7 @@ class Event(db.Model):
     allergies_reviewed_at       = db.Column(db.DateTime, nullable=True)
     wine_tags_generated_at      = db.Column(db.DateTime, nullable=True)
     promotion_sent_at           = db.Column(db.DateTime, nullable=True)
+    name_badges_generated_at    = db.Column(db.DateTime, nullable=True)
 
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow,
@@ -351,6 +352,18 @@ class Event(db.Model):
             return False, None
         if self.seating_updated_at and self.seating_updated_at > self.seating_accepted_at:
             return False, ["seating chart"]
+        return True, []
+
+    def name_badges_is_current(self):
+        """Whether name badges have ever been generated for this event.
+        Deliberately has no staleness trigger at all, unlike Table Cards
+        or Wine Tags -- there's no single dependency that reliably means
+        "this needs updating"; a late-added guest might or might not
+        warrant a second set, entirely the GS's own judgment call. Once
+        generated, this stays current until generated again -- it's just
+        a plain record of whether it's ever been done."""
+        if not self.name_badges_generated_at:
+            return False, None
         return True, []
 
     def wine_tags_is_current(self):

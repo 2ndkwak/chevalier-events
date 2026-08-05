@@ -143,13 +143,15 @@ def _next_action_for_event(event, today):
     # wine list, menu, and officer ranking were last touched (see
     # Event.booklet_is_current()). Exclude any leftover manually-checked
     # "menu_booklet" row here so it's never counted twice.
-    computed_keys = {"menu_booklet", "table_name_cards", "charts_and_lists", "wine_tags"}
-    materials_done = sum(1 for m in event.materials if m.material_key not in computed_keys)
+    # All five materials are now computed rather than manually checked --
+    # nothing here reads EventMaterial/event.materials anymore at all.
     booklet_current, _ = event.booklet_is_current()
     table_cards_current, _ = event.table_cards_is_current()
     charts_current, _ = event.charts_is_current()
     wine_tags_current, _ = event.wine_tags_is_current()
-    materials_done += sum([booklet_current, table_cards_current, charts_current, wine_tags_current])
+    name_badges_current, _ = event.name_badges_is_current()
+    materials_done = sum([booklet_current, table_cards_current, charts_current,
+                          wine_tags_current, name_badges_current])
     if materials_done < materials_total:
         return f"Materials: {materials_done} of {materials_total} done"
 
