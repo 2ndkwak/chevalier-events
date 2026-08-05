@@ -364,6 +364,24 @@ class Event(db.Model):
         return True, []
 
     @property
+    def officers_ranked(self):
+        """Whether at least one attendee (a member/officer or a guest
+        marked as a visiting officer) has actually been given a rank for
+        this event's officer section -- not just whether the Officer
+        Ranking screen was ever saved, which is a different, weaker
+        signal (someone could save it with every rank left blank).
+        Without at least one rank set, the booklet's officer section is
+        silently omitted entirely and everyone prints as a plain
+        Chevalier instead."""
+        for r in self.rsvps:
+            if r.officer_rank is not None:
+                return True
+            for g in r.guests:
+                if g.officer_rank is not None:
+                    return True
+        return False
+
+    @property
     def promoted(self):
         """Whether the promotion email has ever been sent for this event.
         Deliberately one-way, same as allergies_reviewed -- stamped the

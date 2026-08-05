@@ -21,6 +21,16 @@
   </p>
 </div>
 
+{% if not event.officers_ranked %}
+<div class="card" style="border-left:4px solid var(--gold); background:var(--gold-pale); margin-bottom:1.2rem;">
+  <p style="margin:0; font-size:.9rem; color:var(--ink-mid);">
+    <strong>&#9888; No one has a rank set yet.</strong> Without at least one rank, the "Commandeurs
+    et Officiers" section is left out of the booklet entirely -- your officers will print as
+    plain Chevaliers instead. Type a number into Rank for anyone who should appear.
+  </p>
+</div>
+{% endif %}
+
 {% if officers %}
 <div class="card">
   <form method="POST" action="{{ url_for('seating.officer_ranking', event_id=event.id) }}">
