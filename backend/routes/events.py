@@ -437,6 +437,9 @@ def send_promotion(event_id):
         except Exception:
             failed += 1
 
+    event.promotion_sent_at = datetime.utcnow()
+    db.session.commit()
+
     msg = f"Promotion sent to {sent} member{'' if sent==1 else 's'}."
     if failed:
         msg += f" {failed} failed (check email settings)."

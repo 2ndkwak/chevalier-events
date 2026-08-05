@@ -44,6 +44,15 @@
             [Email] Send promotion email
           </button>
         </form>
+        <span style="font-size:.8rem; display:inline-flex; align-items:center; gap:.3rem;">
+          {% if event.promoted %}
+            <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
+            <span class="text-muted">Sent {{ event.promotion_sent_at.strftime('%b %d') }}</span>
+          {% else %}
+            <span style="color:var(--ink-muted);" aria-hidden="true">&#9675;</span>
+            <span class="text-muted">Not yet sent</span>
+          {% endif %}
+        </span>
       {% else %}
         <form method="POST" action="{{ url_for('events.publish_event', event_id=event.id) }}" style="display:inline;">
           <button class="btn btn-primary btn-sm">Publish to portal</button>

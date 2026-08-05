@@ -221,6 +221,7 @@ class Event(db.Model):
     seating_accepted_at         = db.Column(db.DateTime, nullable=True)
     allergies_reviewed_at       = db.Column(db.DateTime, nullable=True)
     wine_tags_generated_at      = db.Column(db.DateTime, nullable=True)
+    promotion_sent_at           = db.Column(db.DateTime, nullable=True)
 
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at      = db.Column(db.DateTime, default=datetime.utcnow,
@@ -361,6 +362,16 @@ class Event(db.Model):
         if self.wine_list_updated_at and self.wine_list_updated_at > self.wine_tags_generated_at:
             return False, ["wine list"]
         return True, []
+
+    @property
+    def promoted(self):
+        """Whether the promotion email has ever been sent for this event.
+        Deliberately one-way, same as allergies_reviewed -- stamped the
+        moment the send is attempted, regardless of individual delivery
+        failures to specific recipients (those are a separate, already
+        surfaced concern; the deliberate act of sending is the milestone,
+        the same way clicking Print is the signal for Charts & Lists)."""
+        return self.promotion_sent_at is not None
 
     @property
     def allergies_reviewed(self):
