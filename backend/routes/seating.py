@@ -1612,12 +1612,10 @@ def _course_mismatch_warnings(event_id):
     menu_courses = {m.course for m in items}
 
     warnings = []
-    # Wine with no matching dish -- course 0 (Cocktails) is exempt by
-    # design, since it's meant to have wines served before guests are
-    # seated with no matching dish at all.
+    # Wine with no matching dish -- flagged for every course, including 0
+    # (Cocktails): wine is usually but not always paired with hors d'oeuvres
+    # there, so a GS should still see it and decide for themselves.
     for c in sorted(wine_courses - menu_courses):
-        if c == 0:
-            continue
         warnings.append(f"Course {c} has wine(s) uploaded but no matching dish in the menu.")
     # Dish with no wine -- no exemption for course 0 here; a dish entered
     # under Cocktails with no wine to go with it is unusual and worth
