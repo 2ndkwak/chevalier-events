@@ -98,7 +98,9 @@
   <div class="card-title">Print</div>
   <p class="text-muted text-sm" style="margin-top:0;">
     {{ event.confirmed_count }} confirmed guest{{ 's' if event.confirmed_count != 1 }} &times;
-    {{ wines|length }} wines = one tag per glass, grouped by wine so each stack stays together for the pourers.
+    {{ wines|length }} wines = one tag per glass, printed guest by guest in serving order -- each
+    guest's complete wine flight together, so the cut stack already reads top to bottom in the
+    order a server applies it at one place setting before moving to the next.
   </p>
   <p class="text-muted text-sm" style="margin-top:.4rem;">
     Course 0 (Cocktails) wines are excluded from the printed tags -- served before guests are

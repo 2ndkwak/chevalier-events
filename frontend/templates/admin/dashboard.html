@@ -89,7 +89,17 @@
 
     {% if outstanding_invites %}
     <div style="margin-bottom:.9rem;">
-      <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-muted); margin-bottom:.3rem;">Outstanding invites</div>
+      <div style="display:flex; align-items:center; justify-content:space-between; gap:.6rem; margin-bottom:.3rem;">
+        <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-muted);">Outstanding invites</div>
+        {% if outstanding_invites_resend_eligible > 0 %}
+        <form method="POST" action="{{ url_for('members.resend_outstanding_invites') }}"
+              onsubmit="return confirm('Resend the invitation email to {{ outstanding_invites_resend_eligible }} outstanding invite(s) (5+ days)?')">
+          <button type="submit" class="btn btn-outline btn-sm" style="font-size:.68rem; padding:.25rem .6rem;">
+            Resend to outstanding ({{ outstanding_invites_resend_eligible }})
+          </button>
+        </form>
+        {% endif %}
+      </div>
       {% for p in outstanding_invites %}
       <div class="text-sm" style="margin-bottom:.25rem;">
         {{ p.display_name }} <span class="text-muted">(sent {{ p.invite_sent_at.strftime("%b %d") }})</span>

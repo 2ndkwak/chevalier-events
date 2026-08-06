@@ -460,6 +460,46 @@ def bulk_invite():
     return redirect(url_for("members.list_members"))
 
 
+@members_bp.route("/resend-outstanding-invites", methods=["POST"])
+@login_required
+@admin_required
+def resend_outstanding_invites():
+    """Re-send the invitation email to everyone whose invite has been
+    outstanding 5+ days -- reuses the exact same send_invite() logic as a
+    single-person resend (fresh token, fresh invite_sent_at each time), just
+    applied to the whole outstanding batch in one click. A short cutoff
+    (5 days) keeps this from immediately re-nagging someone invited
+    yesterday the first time this button gets clicked."""
+    import secrets
+    from datetime import datetime, timedelta
+    from ..email import send_invite_email
+
+    cutoff = datetime.utcnow() - timedelta(days=5)
+    candidates = Person.query.filter(
+        Person.invite_sent_at.isnot(None),
+        Person.can_login == False,
+        Person.invite_sent_at <= cutoff,
+    ).all()
+
+    sent = failed = 0
+    for person in candidates:
+        token = secrets.token_urlsafe(32)
+        person.invite_token = token
+        person.invite_sent_at = datetime.utcnow()
+        try:
+            send_invite_email(person, token)
+            sent += 1
+        except Exception:
+            failed += 1
+    db.session.commit()
+
+    msg = f"Resent to {sent} outstanding invite(s)."
+    if failed:
+        msg += f" {failed} failed (check email settings)."
+    flash(msg, "success" if not failed else "warning")
+    return redirect(url_for("admin.dashboard"))
+
+
 # -- MEMBER LIST PDF ----------------------------------------------------------
 
 @members_bp.route("/list.pdf")

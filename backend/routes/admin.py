@@ -1,6 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for
 from flask_login import login_required, current_user
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from ..models import Person, Event, RSVP
 
 admin_bp = Blueprint("admin", __name__)
@@ -73,6 +73,17 @@ def dashboard():
     outstanding_invites = outstanding_invites_query.limit(5).all()
     outstanding_invites_more = max(0, outstanding_invites_total - len(outstanding_invites))
 
+    # How many of those are 5+ days outstanding -- what "Resend to
+    # outstanding" on the Dashboard will actually reach. Kept separate from
+    # the plain outstanding count above so a person invited yesterday
+    # doesn't get nagged the first time someone clicks the bulk button.
+    resend_cutoff = now - timedelta(days=5)
+    outstanding_invites_resend_eligible = (Person.query
+                                            .filter(Person.invite_sent_at.isnot(None),
+                                                    Person.can_login == False,
+                                                    Person.invite_sent_at <= resend_cutoff)
+                                            .count())
+
     # Recent roster changes: new additions + person_type changes, newest first.
     roster_additions = (Person.query
                          .filter(Person.person_type.in_(["member", "honoraire", "aspirant"]))
@@ -118,6 +129,7 @@ def dashboard():
                            pending_offer_items=pending_offer_items,
                            outstanding_invites=outstanding_invites,
                            outstanding_invites_more=outstanding_invites_more,
+                           outstanding_invites_resend_eligible=outstanding_invites_resend_eligible,
                            roster_changes=roster_changes,
                            dietary_edits=dietary_edits,
                            next_actions=next_actions,

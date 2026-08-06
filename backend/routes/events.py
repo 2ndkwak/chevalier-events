@@ -422,10 +422,13 @@ def toggle_allergy(event_id):
 @admin_required
 def send_promotion(event_id):
     event = Event.query.get_or_404(event_id)
+    # Every person with an email address gets the promotion, regardless of
+    # person_type or whether they've ever activated a portal account --
+    # this is meant to reach the whole membership (Chevaliers, Honoraires,
+    # Aspirants, Partners of any kind), not just those who happen to have
+    # logged in before.
     recipients = Person.query.filter(
-        Person.person_type.in_(["member", "partner"]),
-        Person.email.isnot(None),
-        Person.can_login == True
+        Person.email.isnot(None)
     ).all()
 
     from ..email import send_event_promotion

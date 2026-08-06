@@ -89,19 +89,29 @@ def header_markup(text):
 
 
 def attendee_line_markup(primary_title, primary_name,
-                         partner_honorific=None, partner_title=None, partner_name=None):
+                         partner_honorific=None, partner_title=None, partner_name=None,
+                         primary_honorific=None):
+    """Title and honorific (Mme./M.) are always mutually exclusive, for
+    both the primary and partner slot -- anyone with a title (an officer
+    role, or independent Chevalier/Aspirant standing) is shown with that
+    title only; only someone with no title of their own gets Mme./M.
+    instead. Callers are expected to already enforce that exclusivity
+    (only ever pass one of title/honorific per person, never both) --
+    this function just lays out whichever was given."""
     parts = []
     if primary_title:
         parts.append(f'<font color="{BURGUNDY_HEX}">{primary_title}</font>')
+    elif primary_honorific:
+        parts.append(primary_honorific)
     parts.append(primary_name)
     line = " ".join(parts)
 
     if partner_name:
         tail = ["et"]
-        if partner_honorific:
-            tail.append(partner_honorific)
         if partner_title:
             tail.append(f'<font color="{BURGUNDY_HEX}">{partner_title}</font>')
+        elif partner_honorific:
+            tail.append(partner_honorific)
         tail.append(partner_name)
         line = line + " " + " ".join(tail)
 

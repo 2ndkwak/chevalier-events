@@ -1281,27 +1281,66 @@ def _booklet_title_for(person):
     return title
 
 
-def _honorific_and_title(partner):
-    """For a confirmed partner shown alongside a primary attendee: their
-    Mme./M. honorific (by gender) and their title, if any (via
-    _booklet_title_for, so this always matches what they'd show on their
-    own line)."""
+def _is_independent_member(person):
+    """Whether this person holds membership standing in their own right --
+    Chevalier (any of the three member/partner-Chevalier types) or
+    Aspirant -- as opposed to a plain non-member partner or an Honoraire
+    (Honoraire is deliberately excluded here: their personal title, if
+    any, is a courtesy title, not membership standing, and doesn't
+    participate in the couple-ordering cascade below)."""
+    return person.person_type in ("member", "partner_member_chevalier",
+                                  "partner_non_member_chevalier", "aspirant")
+
+
+def _format_person(person, officer_role=None):
+    """Returns (title, honorific) for this person, always mutually
+    exclusive: an officer role or independent title (Chevalier/Aspirant/
+    Honoraire's personal title) always wins and suppresses Mme./M.
+    entirely; only someone with no title of their own gets an honorific,
+    by gender."""
+    title = officer_role or _booklet_title_for(person)
     honorific = None
-    if partner.gender == "F":
-        honorific = "Mme."
-    elif partner.gender == "M":
-        honorific = "M."
-    return honorific, _booklet_title_for(partner)
+    if not title:
+        if person.gender == "F":
+            honorific = "Mme."
+        elif person.gender == "M":
+            honorific = "M."
+    return title, honorific
+
+
+def _choose_primary(p1, p1_officer_role, p2, p2_officer_role):
+    """Which of a confirmed couple prints first, per the confirmed
+    ordering cascade: whichever holds an officer rank for this event >
+    whichever is independently a member (Chevalier or Aspirant) >
+    whichever is male. Returns (primary, primary_role, secondary,
+    secondary_role)."""
+    p1_is_officer = p1_officer_role is not None
+    p2_is_officer = p2_officer_role is not None
+    if p1_is_officer != p2_is_officer:
+        return (p1, p1_officer_role, p2, p2_officer_role) if p1_is_officer \
+            else (p2, p2_officer_role, p1, p1_officer_role)
+
+    p1_indep = _is_independent_member(p1)
+    p2_indep = _is_independent_member(p2)
+    if p1_indep != p2_indep:
+        return (p1, p1_officer_role, p2, p2_officer_role) if p1_indep \
+            else (p2, p2_officer_role, p1, p1_officer_role)
+
+    if p1.gender == "M" and p2.gender != "M":
+        return (p1, p1_officer_role, p2, p2_officer_role)
+    if p2.gender == "M" and p1.gender != "M":
+        return (p2, p2_officer_role, p1, p1_officer_role)
+    return (p1, p1_officer_role, p2, p2_officer_role)
 
 
 def _person_section_lines(people, confirmed_person_ids, paired_ids):
     """Builds attendee lines for one section (Chevaliers/Honoraire/Aspirants),
     pairing with a confirmed partner where applicable and skipping anyone
-    already shown as someone else's partner. Each person's title is looked
-    up from their own person_type via _booklet_title_for, so this works
-    uniformly whether the section is Les Chevaliers (which now pools
-    members, plain partners, and both partner-Chevalier types together),
-    Honoraire, or Aspirants."""
+    already shown as someone else's partner. By the time this runs, the
+    officer loop has already claimed every officer and their partner (see
+    build_booklet_data), so nobody reaching this function is an officer --
+    only the independent-member and male-first tiers of the cascade can
+    ever apply here."""
     import os as _os, sys as _sys
     project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
     if project_root not in _sys.path:
@@ -1312,16 +1351,22 @@ def _person_section_lines(people, confirmed_person_ids, paired_ids):
     for p in sorted(people, key=lambda x: ((x.last_name or "").lower(), (x.first_name or "").lower())):
         if p.id in paired_ids:
             continue
-        primary_title = _booklet_title_for(p)
-        partner_honorific = partner_title = partner_name = None
-        if p.partner_id:
-            partner = Person.query.get(p.partner_id)
-            if partner and partner.id in confirmed_person_ids:
-                partner_honorific, partner_title = _honorific_and_title(partner)
-                partner_name = partner.display_name
-                paired_ids.add(partner.id)
-        lines.append(_gmb.attendee_line_markup(primary_title, p.display_name,
-                                               partner_honorific, partner_title, partner_name))
+        partner = Person.query.get(p.partner_id) if p.partner_id else None
+        if partner and partner.id in confirmed_person_ids:
+            primary, _, secondary, _ = _choose_primary(p, None, partner, None)
+            primary_title, primary_honorific = _format_person(primary)
+            secondary_title, secondary_honorific = _format_person(secondary)
+            lines.append(_gmb.attendee_line_markup(
+                primary_title, primary.display_name,
+                secondary_honorific, secondary_title, secondary.display_name,
+                primary_honorific=primary_honorific))
+            paired_ids.add(p.id)
+            paired_ids.add(partner.id)
+        else:
+            title, honorific = _format_person(p)
+            lines.append(_gmb.attendee_line_markup(title, p.display_name,
+                                                    primary_honorific=honorific))
+            paired_ids.add(p.id)
     return lines
 
 
@@ -1339,6 +1384,14 @@ def build_booklet_data(event):
     confirmed_person_ids = {r.person_id for r in confirmed_rsvps}
     paired_ids = set()
 
+    # Every confirmed person's own officer role for THIS event, if any --
+    # looked up once here so the officer-pairing loop below can check
+    # whether a partner is independently an officer too (rare, but two
+    # officers can be married to each other), not just whichever side
+    # happened to drive the loop.
+    officer_role_by_person = {r.person_id: (r.person.officer_role or "Officier")
+                              for r in confirmed_rsvps if r.officer_rank is not None}
+
     # -- Officers: member officers (ranked) + guest officers (ranked) --
     officer_entries = []
     for r in confirmed_rsvps:
@@ -1355,16 +1408,25 @@ def build_booklet_data(event):
     for rank, kind, obj in officer_entries:
         if kind == "rsvp":
             p = obj.person
-            partner_honorific = partner_title = partner_name = None
-            if p.partner_id:
-                partner = Person.query.get(p.partner_id)
-                if partner and partner.id in confirmed_person_ids:
-                    partner_honorific, partner_title = _honorific_and_title(partner)
-                    partner_name = partner.display_name
-                    paired_ids.add(partner.id)
-            officers.append(_gmb.attendee_line_markup(
-                p.officer_role or "Officier", p.display_name,
-                partner_honorific, partner_title, partner_name))
+            if p.id in paired_ids:
+                continue
+            partner = Person.query.get(p.partner_id) if p.partner_id else None
+            if partner and partner.id in confirmed_person_ids:
+                p_role = officer_role_by_person.get(p.id)
+                partner_role = officer_role_by_person.get(partner.id)
+                primary, primary_role, secondary, secondary_role = _choose_primary(
+                    p, p_role, partner, partner_role)
+                primary_title, primary_honorific = _format_person(primary, primary_role)
+                secondary_title, secondary_honorific = _format_person(secondary, secondary_role)
+                officers.append(_gmb.attendee_line_markup(
+                    primary_title, primary.display_name,
+                    secondary_honorific, secondary_title, secondary.display_name,
+                    primary_honorific=primary_honorific))
+                paired_ids.add(partner.id)
+            else:
+                title, honorific = _format_person(p, officer_role_by_person.get(p.id))
+                officers.append(_gmb.attendee_line_markup(title, p.display_name,
+                                                           primary_honorific=honorific))
             paired_ids.add(p.id)
         else:
             officers.append(_gmb.attendee_line_markup(obj.officer_title or "Officier", obj.display_name))
