@@ -84,22 +84,27 @@ def dashboard():
                                                     Person.invite_sent_at <= resend_cutoff)
                                             .count())
 
-    # Recent roster changes: new additions + person_type changes, newest first.
+    # Recent roster changes: new additions + person_type changes in the last
+    # 30 days, newest first. Window-based (not count-based) so this naturally
+    # quiets down as a Sous Commanderie's roster stabilizes, rather than
+    # always showing exactly N items regardless of how old they are.
+    roster_changes_cutoff = now - timedelta(days=30)
     roster_additions = (Person.query
-                         .filter(Person.person_type.in_(["member", "honoraire", "aspirant"]))
+                         .filter(Person.person_type.in_(["member", "honoraire", "aspirant"]),
+                                 Person.created_at >= roster_changes_cutoff)
                          .order_by(Person.created_at.desc())
-                         .limit(8).all())
+                         .all())
     roster_promotions = (Person.query
-                          .filter(Person.person_type_updated_at.isnot(None))
+                          .filter(Person.person_type_updated_at.isnot(None),
+                                  Person.person_type_updated_at >= roster_changes_cutoff)
                           .order_by(Person.person_type_updated_at.desc())
-                          .limit(8).all())
+                          .all())
     roster_changes = []
     for p in roster_additions:
         roster_changes.append({"person": p, "when": p.created_at, "kind": "added"})
     for p in roster_promotions:
         roster_changes.append({"person": p, "when": p.person_type_updated_at, "kind": "type_changed"})
     roster_changes.sort(key=lambda r: r["when"], reverse=True)
-    roster_changes = roster_changes[:6]
 
     # Dietary tag edits, but only for people attending an upcoming event.
     upcoming_person_ids = {
