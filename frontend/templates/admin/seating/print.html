@@ -742,18 +742,41 @@
     'namecards':        'sec-namecards',
   };
 
+  // Per-tab document titles, matching each section's own "report-title"
+  // heading. Browsers use document.title as the suggested filename for
+  // "Save as PDF" -- with one fixed page title for every tab, all four
+  // Charts & Lists views (plus Name Badges / Name Cards) suggested the
+  // identical filename, so saving more than one meant manually renaming
+  // every time or overwriting the last one.
+  const tabTitleMap = {
+    'visual':           "{{ event.title }} — Seating Chart",
+    'by-table':         "{{ event.title }} — Seating by Table",
+    'alpha':             "{{ event.title }} — Seating List, Alphabetical",
+    'by-table-allergy': "{{ event.title }} — Seating by Table, Dietary Notes",
+    'namebadges':       "{{ event.title }} — Name Badges",
+    'namecards':        "{{ event.title }} — Table Name Cards",
+  };
+
+  document.title = tabTitleMap[currentTab];
+
   function showTab(tab, btn) {
     currentTab = tab;
     document.querySelectorAll('.print-section').forEach(s => s.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.getElementById(tabSectionMap[tab]).classList.add('active');
     btn.classList.add('active');
+    document.title = tabTitleMap[tab];
   }
 
   function printCurrent() {
     // Mark the active section for @media print
     document.querySelectorAll('.print-section').forEach(s => s.classList.remove('printing'));
     document.getElementById(tabSectionMap[currentTab]).classList.add('printing');
+
+    // Some browsers read document.title for the "Save as PDF" filename at
+    // the moment window.print() is called rather than whenever it was last
+    // set, so re-assert it here too, immediately before printing.
+    document.title = tabTitleMap[currentTab];
 
     // The four bundled "charts & lists" tabs -- Name Badges and Table Name
     // Cards each have their own real generated download elsewhere, so they
