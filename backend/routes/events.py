@@ -34,8 +34,17 @@ def list_events():
     next_actions = {e.id: _next_action_for_event(e, now.date())
                     for e in events if e.event_date >= now}
 
+    # Milestone dots, same as the Dashboard's upcoming-events table. Only
+    # computed for upcoming/current events -- an archived event's dots are
+    # frozen history that nobody needs to see again, and computing them for
+    # every past event this Sous Commanderie has ever run (which the "All"
+    # and "Archived" filters can surface) would mean an unbounded, ever-
+    # growing set of extra per-event queries with no real payoff.
+    milestone_dots = {e.id: e.milestone_dots()
+                       for e in events if e.event_date >= now}
+
     return render_template("admin/events/list.html", events=events, show=show,
-                           next_actions=next_actions)
+                           next_actions=next_actions, milestone_dots=milestone_dots)
 
 
 # --- CREATE -------------------------------------------------------------------
