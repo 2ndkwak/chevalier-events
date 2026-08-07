@@ -218,6 +218,17 @@ class Event(db.Model):
     seating_updated_at          = db.Column(db.DateTime, nullable=True)
     table_cards_generated_at    = db.Column(db.DateTime, nullable=True)
     charts_generated_at         = db.Column(db.DateTime, nullable=True)
+    # Per-item Charts & Lists tracking (Aug 2026): the four bundled tabs on
+    # the print/export screen -- Visual chart, By table, Alphabetical,
+    # Table+allergies -- are now checked off individually rather than as
+    # one group. `charts_generated_at` above is left in place and still
+    # updated alongside these (see mark_charts_printed) purely so the
+    # existing Dashboard/Events-page dot-strip keeps working unchanged
+    # until that logic is deliberately switched over to require all four.
+    charts_visual_printed_at         = db.Column(db.DateTime, nullable=True)
+    charts_by_table_printed_at       = db.Column(db.DateTime, nullable=True)
+    charts_alpha_printed_at          = db.Column(db.DateTime, nullable=True)
+    charts_by_table_allergy_printed_at = db.Column(db.DateTime, nullable=True)
     seating_accepted_at         = db.Column(db.DateTime, nullable=True)
     allergies_reviewed_at       = db.Column(db.DateTime, nullable=True)
     wine_tags_generated_at      = db.Column(db.DateTime, nullable=True)
@@ -333,12 +344,40 @@ class Event(db.Model):
         print button was clicked while viewing one of the four bundled
         tabs (visual chart, by table, alphabetical, table + allergies) --
         the browser's own print dialog after that click isn't something
-        the server can observe, so the click itself is the signal."""
+        the server can observe, so the click itself is the signal.
+
+        Retained as-is (single aggregate timestamp) purely for the
+        Dashboard/Events-page dot-strip's existing "Charts & Lists" dot;
+        the print screen itself now tracks and displays each of the four
+        items separately via _chart_item_is_current() below."""
         if not self.charts_generated_at:
             return False, None
         if self.seating_updated_at and self.seating_updated_at > self.charts_generated_at:
             return False, ["seating chart"]
         return True, []
+
+    def _chart_item_is_current(self, printed_at):
+        """Shared staleness check for one of the four individually-tracked
+        Charts & Lists items. Same shape and same single dependency
+        (the seating chart) as charts_is_current() above -- this just
+        applies it to one item's own printed_at instead of the group's."""
+        if not printed_at:
+            return False, None
+        if self.seating_updated_at and self.seating_updated_at > printed_at:
+            return False, ["seating chart"]
+        return True, []
+
+    def charts_visual_is_current(self):
+        return self._chart_item_is_current(self.charts_visual_printed_at)
+
+    def charts_by_table_is_current(self):
+        return self._chart_item_is_current(self.charts_by_table_printed_at)
+
+    def charts_alpha_is_current(self):
+        return self._chart_item_is_current(self.charts_alpha_printed_at)
+
+    def charts_by_table_allergy_is_current(self):
+        return self._chart_item_is_current(self.charts_by_table_allergy_printed_at)
 
     def seating_is_accepted(self):
         """Whether the seating plan has been explicitly accepted (the one

@@ -16,6 +16,8 @@
       --allergy-bd:  #D4A843;
       --male:        #5B8DB8;
       --female:      #C4637A;
+      --success:     #2B5C35;
+      --danger:      #8B1A1A;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -80,6 +82,23 @@
         color: var(--ink);
       }
       .materials-bar input[type="checkbox"] { cursor: pointer; }
+      .chart-item-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        font-family: sans-serif;
+        font-size: .68rem;
+        font-weight: bold;
+        border: 1.5px solid var(--ink-muted);
+        color: var(--ink-muted);
+        background: transparent;
+        cursor: default;
+      }
+      .chart-item-badge.done  { background: var(--success); border-color: var(--success); color: #fff; }
+      .chart-item-badge.stale { background: var(--gold);    border-color: var(--gold);    color: #fff; }
       .btn {
         font-family: sans-serif;
         font-size: .78rem;
@@ -457,13 +476,33 @@
 </span>
 {% endmacro %}
 
+{% macro chart_item_badge(num, label, current, stale_because, done_at) %}
+{% if stale_because is none %}
+  {% set cls = "not_done" %}
+  {% set tip = label ~ " — not yet printed" %}
+{% elif current %}
+  {% set cls = "done" %}
+  {% set tip = label ~ " — printed " ~ done_at.strftime('%b %d') %}
+{% else %}
+  {% set cls = "stale" %}
+  {% set tip = label ~ " — " ~ (stale_because|join('/')) ~ " changed since printed " ~ done_at.strftime('%b %d') ~ " -- worth doing again" %}
+{% endif %}
+<span class="chart-item-badge {{ cls }}" title="{{ tip }}">{% if cls == "done" %}&#10003;{% else %}{{ num }}{% endif %}</span>
+{% endmacro %}
+
 <div class="materials-bar">
   <span class="materials-label">Pre-event materials:</span>
   {{ material_status("Menu booklet", booklet_current, booklet_stale_because, event.booklet_generated_at) }}
   {{ material_status("Wine tags", wine_tags_current, wine_tags_stale_because, event.wine_tags_generated_at) }}
   {{ material_status("Table name cards", table_cards_current, table_cards_stale_because, event.table_cards_generated_at) }}
   {{ material_status("Name badges", name_badges_current, name_badges_stale_because, event.name_badges_generated_at) }}
-  {{ material_status("Charts & lists", charts_current, charts_stale_because, event.charts_generated_at, verb='printed') }}
+  <span class="charts-group" style="display:inline-flex; align-items:center; gap:.3rem; font-size:.85rem;">
+    Charts &amp; Lists:
+    {{ chart_item_badge(1, "① Visual chart", charts_visual_current, charts_visual_stale_because, event.charts_visual_printed_at) }}
+    {{ chart_item_badge(2, "② By table", charts_by_table_current, charts_by_table_stale_because, event.charts_by_table_printed_at) }}
+    {{ chart_item_badge(3, "③ Alphabetical", charts_alpha_current, charts_alpha_stale_because, event.charts_alpha_printed_at) }}
+    {{ chart_item_badge(4, "④ Table + allergies", charts_by_table_allergy_current, charts_by_table_allergy_stale_because, event.charts_by_table_allergy_printed_at) }}
+  </span>
 </div>
 
 <!-- ── Tab bar ─────────────────────────────────────────────────────────────── -->
@@ -784,7 +823,11 @@
     // invisible to the server, so this click is the only signal available.
     const chartsAndListsTabs = ['visual', 'by-table', 'alpha', 'by-table-allergy'];
     if (chartsAndListsTabs.includes(currentTab)) {
-      fetch("{{ url_for('seating.mark_charts_printed', event_id=event.id) }}", { method: "POST" });
+      fetch("{{ url_for('seating.mark_charts_printed', event_id=event.id) }}", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ which: currentTab })
+      });
     }
 
     window.print();

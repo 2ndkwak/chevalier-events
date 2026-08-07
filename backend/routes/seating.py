@@ -607,9 +607,31 @@ def mark_charts_printed(event_id):
     four bundled charts/lists tabs (visual, by table, alphabetical,
     table+allergies) is the one being printed -- the browser's own print
     dialog after that click is invisible to the server, so the click
-    itself is the signal used here."""
+    itself is the signal used here.
+
+    Expects a JSON body {"which": "visual" | "by-table" | "alpha" |
+    "by-table-allergy"} identifying which of the four tabs triggered the
+    print. Sets that item's own printed_at, and also refreshes the
+    original aggregate charts_generated_at so the existing Dashboard/
+    Events-page "Charts & Lists" dot keeps working unchanged for now.
+    A missing/unrecognized "which" is tolerated (aggregate-only update)
+    rather than erroring, so an old cached page or an unexpected client
+    doesn't break the print button."""
     event = Event.query.get_or_404(event_id)
-    event.charts_generated_at = datetime.utcnow()
+    now = datetime.utcnow()
+
+    which_field = {
+        "visual":           "charts_visual_printed_at",
+        "by-table":         "charts_by_table_printed_at",
+        "alpha":            "charts_alpha_printed_at",
+        "by-table-allergy": "charts_by_table_allergy_printed_at",
+    }
+    which = (request.get_json(silent=True) or {}).get("which")
+    field_name = which_field.get(which)
+    if field_name:
+        setattr(event, field_name, now)
+
+    event.charts_generated_at = now
     db.session.commit()
     return jsonify({"ok": True})
 
@@ -683,6 +705,10 @@ def print_seating(event_id):
     charts_current, charts_stale_because = event.charts_is_current()
     wine_tags_current, wine_tags_stale_because = event.wine_tags_is_current()
     name_badges_current, name_badges_stale_because = event.name_badges_is_current()
+    charts_visual_current, charts_visual_stale_because = event.charts_visual_is_current()
+    charts_by_table_current, charts_by_table_stale_because = event.charts_by_table_is_current()
+    charts_alpha_current, charts_alpha_stale_because = event.charts_alpha_is_current()
+    charts_by_table_allergy_current, charts_by_table_allergy_stale_because = event.charts_by_table_allergy_is_current()
 
     from datetime import datetime
     return render_template(
@@ -704,6 +730,14 @@ def print_seating(event_id):
         wine_tags_stale_because = wine_tags_stale_because,
         name_badges_current = name_badges_current,
         name_badges_stale_because = name_badges_stale_because,
+        charts_visual_current = charts_visual_current,
+        charts_visual_stale_because = charts_visual_stale_because,
+        charts_by_table_current = charts_by_table_current,
+        charts_by_table_stale_because = charts_by_table_stale_because,
+        charts_alpha_current = charts_alpha_current,
+        charts_alpha_stale_because = charts_alpha_stale_because,
+        charts_by_table_allergy_current = charts_by_table_allergy_current,
+        charts_by_table_allergy_stale_because = charts_by_table_allergy_stale_because,
     )
 
 
