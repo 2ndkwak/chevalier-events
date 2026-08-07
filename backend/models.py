@@ -339,22 +339,37 @@ class Event(db.Model):
         return True, []
 
     def charts_is_current(self):
-        """Whether the charts & lists views were printed after the current
-        seating chart was last generated/edited. "Printed" here means the
-        print button was clicked while viewing one of the four bundled
-        tabs (visual chart, by table, alphabetical, table + allergies) --
-        the browser's own print dialog after that click isn't something
-        the server can observe, so the click itself is the signal.
+        """Aggregate status for the Dashboard/Events-page "Charts & Lists"
+        dot, now that the print screen itself tracks each of the four
+        bundled tabs (visual chart, by table, alphabetical, table +
+        allergies) separately via charts_visual_is_current() etc. below.
 
-        Retained as-is (single aggregate timestamp) purely for the
-        Dashboard/Events-page dot-strip's existing "Charts & Lists" dot;
-        the print screen itself now tracks and displays each of the four
-        items separately via _chart_item_is_current() below."""
-        if not self.charts_generated_at:
-            return False, None
-        if self.seating_updated_at and self.seating_updated_at > self.charts_generated_at:
-            return False, ["seating chart"]
-        return True, []
+        Per Trey's call: green ("done") only once all four are printed
+        and current -- "fully ready to hand out." If any item that WAS
+        printed is now behind the current seating chart, the whole group
+        reads "stale" (amber) -- something already printed is wrong, and
+        that's worth flagging even if the other three are fine. If
+        nothing is stale but the four simply haven't all been printed
+        yet, the group reads "not_done" (the same neutral state as never
+        having started this milestone at all) rather than a false-alarm
+        "stale" -- there's nothing wrong yet, it's just not finished."""
+        items = [
+            self.charts_visual_is_current(),
+            self.charts_by_table_is_current(),
+            self.charts_alpha_is_current(),
+            self.charts_by_table_allergy_is_current(),
+        ]
+        stale_reasons = []
+        for current, stale_because in items:
+            if stale_because is not None and not current:
+                for r in stale_because:
+                    if r not in stale_reasons:
+                        stale_reasons.append(r)
+        if stale_reasons:
+            return False, stale_reasons
+        if all(current for current, _ in items):
+            return True, []
+        return False, None
 
     def _chart_item_is_current(self, printed_at):
         """Shared staleness check for one of the four individually-tracked
