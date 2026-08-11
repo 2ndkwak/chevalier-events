@@ -44,6 +44,11 @@
             [Email] Send promotion email
           </button>
         </form>
+        <form method="POST" action="{{ url_for('events.send_promotion_test', event_id=event.id) }}" style="display:inline;">
+          <button class="btn btn-outline btn-sm" type="submit">
+            Send test copy to myself
+          </button>
+        </form>
         <span style="font-size:.8rem; display:inline-flex; align-items:center; gap:.3rem;">
           {% if event.promoted %}
             <span style="color:var(--success);" aria-hidden="true">&#10003;</span>

@@ -459,6 +459,30 @@ def send_promotion(event_id):
     return redirect(url_for("events.edit_event", event_id=event_id))
 
 
+@events_bp.route("/<int:event_id>/promote/test", methods=["POST"])
+@login_required
+@admin_required
+def send_promotion_test(event_id):
+    """Send the exact same promotion email to the logged-in admin only,
+    so a new/changed description (links, formatting) can be checked in a
+    real inbox before the real blast goes out to the whole membership.
+    Deliberately does NOT touch event.promotion_sent_at -- a test send
+    must never mark the event as "Promoted" or affect that milestone."""
+    event = Event.query.get_or_404(event_id)
+
+    if not current_user.email:
+        flash("Your own account has no email address on file, so a test send has nowhere to go.", "error")
+        return redirect(url_for("events.edit_event", event_id=event_id))
+
+    from ..email import send_event_promotion
+    try:
+        send_event_promotion(event, current_user)
+        flash(f"Test promotion email sent to {current_user.email}.", "success")
+    except Exception:
+        flash("Test send failed (check email settings).", "error")
+    return redirect(url_for("events.edit_event", event_id=event_id))
+
+
 # --- HELPERS ------------------------------------------------------------------
 
 def _rsvp_sort_key(sort):

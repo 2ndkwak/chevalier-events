@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ event.title }}</title>
+</head>
+<body style="margin:0; padding:0; background-color:#EDE5D0; font-family:Georgia,'Times New Roman',serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#EDE5D0; padding:32px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+               style="max-width:600px; width:100%; background-color:#FFFFFF; border-radius:6px; overflow:hidden; box-shadow:0 4px 20px rgba(30,18,8,.15);">
+
+          <!-- Header -->
+          <tr>
+            <td align="center" style="background-color:#4A1020; padding:32px 24px 26px 24px; border-bottom:3px solid #B8912A;">
+              <img src="{{ logo_url }}" alt="Confrerie des Chevaliers du Tastevin" width="86"
+                   style="display:block; margin:0 auto 14px auto; border-radius:50%; border:2px solid #D4A843;">
+              <div style="font-family:Georgia,serif; font-size:12px; letter-spacing:2.5px; text-transform:uppercase; color:#D4A843;">
+                Confrerie des Chevaliers du Tastevin
+              </div>
+              <div style="font-family:Georgia,serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#F5E9C8; margin-top:4px;">
+                Sous Commanderie de Cleveland
+              </div>
+            </td>
+          </tr>
+
+          <!-- Greeting / intro -->
+          <tr>
+            <td style="padding:36px 40px 8px 40px;">
+              <div style="font-family:Georgia,serif; font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:#B8912A; text-align:center; margin-bottom:22px;">
+                You Are Cordially Invited
+              </div>
+              <p style="font-family:Georgia,serif; font-size:17px; color:#1E1208; line-height:1.6; margin:0 0 18px 0;">
+                Dear {{ person.display_name }},
+              </p>
+              <h1 style="font-family:Georgia,serif; font-size:24px; color:#4A1020; line-height:1.3; margin:0 0 20px 0; text-align:center;">
+                {{ event.title }}
+              </h1>
+            </td>
+          </tr>
+
+          <!-- Details grid -->
+          <tr>
+            <td style="padding:0 40px 24px 40px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td width="50%" valign="top" style="padding:0 8px 16px 0;">
+                    <div style="font-family:Georgia,serif; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:#8C2A3E; margin-bottom:3px;">Date &amp; Time</div>
+                    <div style="font-family:Georgia,serif; font-size:14.5px; color:#3D2B1A; line-height:1.5;">
+                      {{ event.event_date.strftime("%A, %B %d, %Y") }}
+                      {% if event.event_date.strftime("%H:%M") != "00:00" %}<br>{{ event.event_date.strftime("%I:%M %p") }}{% endif %}
+                    </div>
+                  </td>
+                  {% if event.venue_name %}
+                  <td width="50%" valign="top" style="padding:0 0 16px 8px;">
+                    <div style="font-family:Georgia,serif; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:#8C2A3E; margin-bottom:3px;">Venue</div>
+                    <div style="font-family:Georgia,serif; font-size:14.5px; color:#3D2B1A; line-height:1.5;">
+                      {{ event.venue_name }}
+                      {% if event.venue_address %}<br><span style="font-size:12.5px; color:#7A6650;">{{ event.venue_address }}</span>{% endif %}
+                    </div>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% if event.dress_code or event.hosts %}
+                <tr>
+                  {% if event.dress_code %}
+                  <td width="50%" valign="top" style="padding:0 8px 16px 0;">
+                    <div style="font-family:Georgia,serif; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:#8C2A3E; margin-bottom:3px;">Dress Code</div>
+                    <div style="font-family:Georgia,serif; font-size:14.5px; color:#3D2B1A; line-height:1.5;">{{ event.dress_code }}</div>
+                  </td>
+                  {% endif %}
+                  {% if event.hosts %}
+                  <td width="50%" valign="top" style="padding:0 0 16px 8px;">
+                    <div style="font-family:Georgia,serif; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:#8C2A3E; margin-bottom:3px;">Hosted By</div>
+                    <div style="font-family:Georgia,serif; font-size:14.5px; color:#3D2B1A; line-height:1.5;">{{ event.hosts }}</div>
+                  </td>
+                  {% endif %}
+                </tr>
+                {% endif %}
+                <tr>
+                  <td width="50%" valign="top" style="padding:0 8px 4px 0;">
+                    <div style="font-family:Georgia,serif; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:#8C2A3E; margin-bottom:3px;">Price Per Person</div>
+                    <div style="font-family:Georgia,serif; font-size:14.5px; color:#3D2B1A; line-height:1.5;">
+                      {% if event.price_per_person %}
+                        ${{ "%.2f"|format(event.price_per_person|float) }}
+                        {% if event.paypal_link %}
+                          <br><span style="font-size:12.5px;">
+                            Or
+                            {% if event.paypal_price_per_person %}${{ "%.2f"|format(event.paypal_price_per_person|float) }}/person{% endif %}
+                            via <a href="{{ event.paypal_link }}" style="color:#8C2A3E;">PayPal</a>
+                          </span>
+                        {% endif %}
+                      {% else %}
+                        <span style="color:#7A6650;">TBD</span>
+                      {% endif %}
+                    </div>
+                  </td>
+                  {% if event.rsvp_deadline %}
+                  <td width="50%" valign="top" style="padding:0 0 4px 8px;">
+                    <div style="font-family:Georgia,serif; font-size:10.5px; letter-spacing:1.2px; text-transform:uppercase; color:#8C2A3E; margin-bottom:3px;">Reservations Close</div>
+                    <div style="font-family:Georgia,serif; font-size:14.5px; color:#3D2B1A; line-height:1.5;">{{ event.rsvp_deadline.strftime("%B %d, %Y") }}</div>
+                  </td>
+                  {% endif %}
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          {% if event.description %}
+          <!-- Divider -->
+          <tr>
+            <td style="padding:0 40px;">
+              <hr style="border:none; border-top:1px solid #E0D5BC; margin:0;">
+            </td>
+          </tr>
+
+          <!-- Description (from the event's rich-text editor) -->
+          <tr>
+            <td style="padding:24px 40px 8px 40px; font-family:Georgia,serif; font-size:15px; color:#3D2B1A; line-height:1.7;">
+              {{ event.description|safe }}
+            </td>
+          </tr>
+          {% endif %}
+
+          <!-- CTA button -->
+          <tr>
+            <td align="center" style="padding:30px 40px 34px 40px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" bgcolor="#B8912A" style="border-radius:5px;">
+                    <a href="{{ event_url }}"
+                       style="display:inline-block; padding:14px 38px; font-family:Georgia,serif; font-size:15px;
+                              letter-spacing:.5px; color:#FFFFFF; text-decoration:none; border-radius:5px;">
+                      View Event &amp; RSVP
+                    </a>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Fallback link -->
+          <tr>
+            <td style="padding:0 40px 32px 40px;">
+              <p style="font-family:Georgia,serif; font-size:12.5px; color:#7A6650; line-height:1.6; margin:0; text-align:center;">
+                If the button above doesn't work, copy and paste this link into your browser:<br>
+                <a href="{{ event_url }}" style="color:#8C2A3E; word-break:break-all;">{{ event_url }}</a>
+              </p>
+            </td>
+          </tr>
+
+          <!-- Divider -->
+          <tr>
+            <td style="padding:0 40px;">
+              <hr style="border:none; border-top:1px solid #E0D5BC; margin:0;">
+            </td>
+          </tr>
+
+          <!-- Footer note -->
+          <tr>
+            <td style="padding:24px 40px 34px 40px;">
+              <p style="font-family:Georgia,serif; font-size:14px; color:#3D2B1A; line-height:1.6; margin:0; text-align:center; font-style:italic;">
+                Tastevin en Main
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Sub-footer -->
+        <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px; width:100%;">
+          <tr>
+            <td align="center" style="padding:18px 24px;">
+              <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; font-size:11px; color:#7A6650; margin:0;">
+                Confrerie des Chevaliers du Tastevin &mdash; Sous Commanderie de Cleveland
+              </p>
+            </td>
+          </tr>
+        </table>
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

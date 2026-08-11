@@ -1,5 +1,7 @@
 from flask import current_app, render_template_string
 from flask_mail import Message
+import re
+from html.parser import HTMLParser
 
 
 def greeting(person):
@@ -12,6 +14,83 @@ def greeting(person):
     if g == "F":
         return f"Chère {person.first_name}"
     return f"Dear {person.first_name}"
+
+
+class _PlainTextExtractor(HTMLParser):
+    """Minimal HTML-to-plain-text walker for the small set of tags Quill's
+    "snow" editor (the only source of event.description HTML) actually
+    produces: p, br, ul/ol/li, a, and inline formatting tags (strong/em/u/
+    span) that plain text just can't represent and are safely dropped."""
+    def __init__(self):
+        super().__init__()
+        self.parts = []
+        self._link_href = None
+        self._link_text = []
+        self._list_stack = []
+        self._ol_counters = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "a":
+            self._link_href = dict(attrs).get("href")
+            self._link_text = []
+        elif tag == "br":
+            self.parts.append("\n")
+        elif tag == "li":
+            if self._list_stack and self._list_stack[-1] == "ol":
+                self._ol_counters[-1] += 1
+                self.parts.append(f"\n  {self._ol_counters[-1]}. ")
+            else:
+                self.parts.append("\n  - ")
+        elif tag == "ul":
+            self._list_stack.append("ul")
+        elif tag == "ol":
+            self._list_stack.append("ol")
+            self._ol_counters.append(0)
+
+    def handle_endtag(self, tag):
+        if tag == "a":
+            text = "".join(self._link_text).strip()
+            href = self._link_href
+            if href and text and href != text:
+                self.parts.append(f"{text} ({href})")
+            elif href:
+                self.parts.append(href)
+            else:
+                self.parts.append(text)
+            self._link_href = None
+            self._link_text = []
+        elif tag == "p":
+            self.parts.append("\n\n")
+        elif tag in ("ul", "ol"):
+            if self._list_stack:
+                self._list_stack.pop()
+            if tag == "ol" and self._ol_counters:
+                self._ol_counters.pop()
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if self._link_href is not None:
+            self._link_text.append(data)
+        else:
+            self.parts.append(data)
+
+
+def html_to_plain_text(html_str):
+    """Best-effort conversion of Quill-produced event-description HTML into
+    readable plain text, for the non-HTML fallback part of the promotion
+    email. A link becomes 'link text (https://...)' so the URL is still
+    visible and clickable-as-plain-text in mail clients that auto-link
+    bare URLs, even for recipients whose client shows the plain-text part
+    instead of the HTML one."""
+    if not html_str:
+        return ""
+    parser = _PlainTextExtractor()
+    parser.feed(html_str)
+    text = "".join(parser.parts)
+    text = re.sub(r'[ \t]+', ' ', text)
+    text = re.sub(r'\n[ \t]+', '\n', text)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+    return text.strip()
 
 
 def send_admin_rsvp_notification(event, person, action):
@@ -42,9 +121,19 @@ Waitlist: {sum(1 for r in event.rsvps if r.status == 'waitlist')}
 
 
 def send_event_promotion(event, person):
-    """Send an event announcement email to a single member or partner."""
+    """Send an event announcement email to a single member or partner.
+    Sends both an HTML version (so a PayPal/payment link or any other
+    link, bold/italic, or list entered in the event's description editor
+    actually renders as such -- see the Aug 2026 link-button addition to
+    that editor) and a plain-text fallback for clients that don't render
+    HTML mail, with links rendered as 'text (url)' so the URL itself is
+    still visible and usable there too."""
     if not person.email:
         return
+
+    from flask import url_for, render_template
+    event_url = url_for("portal.event_detail", event_id=event.id, _external=True)
+    logo_url = url_for("static", filename="img/Chevalier_Logo.jpg", _external=True)
 
     subject = f"[Chevalier Events] {event.title} -- {event.event_date.strftime('%B %d, %Y')}"
 
@@ -58,19 +147,25 @@ You are cordially invited to:
   {event.venue_name or ""}
   {event.venue_address or ""}
 
-{event.description or ""}
+{html_to_plain_text(event.description)}
 
 {"Dress code: " + event.dress_code if event.dress_code else ""}
 {"RSVP by: " + event.rsvp_deadline.strftime("%B %d, %Y") if event.rsvp_deadline else ""}
 
 Please log in to the Chevalier Events portal to RSVP:
-http://localhost:5000/portal
+{event_url}
 
 Tastevin en main,
 Confrerie des Chevaliers du Tastevin
 """.strip()
 
-    msg = Message(subject=subject, recipients=[person.email], body=body)
+    html_body = render_template("email/event_promotion.html",
+                                 person=person,
+                                 event=event,
+                                 event_url=event_url,
+                                 logo_url=logo_url)
+
+    msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
     mail = current_app.extensions["mail"]
     mail.send(msg)
 
