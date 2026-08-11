@@ -216,6 +216,7 @@
         [{ "color": [] }],
         [{ "size": ["small", false, "large", "huge"] }],
         [{ "list": "ordered" }, { "list": "bullet" }],
+        ["link"],
         ["clean"]
       ]
     }
@@ -247,9 +248,18 @@
     window.scrollTo(0, 0);
   });
 
-  // Copy HTML into hidden input on submit
+  // Copy HTML into hidden input on submit. Any link inserted via the
+  // editor's link button (e.g. a PayPal payment link) gets forced to
+  // open in a new tab -- clicking it shouldn't navigate the reader away
+  // from the event page/invitation they were reading.
   document.getElementById("event-form").addEventListener("submit", function() {
-    document.getElementById("description").value = quill.root.innerHTML;
+    var temp = document.createElement("div");
+    temp.innerHTML = quill.root.innerHTML;
+    temp.querySelectorAll("a").forEach(function(a) {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+    });
+    document.getElementById("description").value = temp.innerHTML;
   });
 </script>
 {% endblock %}
