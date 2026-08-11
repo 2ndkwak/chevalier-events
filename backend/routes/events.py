@@ -1,7 +1,7 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, jsonify)
 from flask_login import login_required, current_user
-from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag, EventAllergyOff
+from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag, EventAllergyOff, EventPromotionSend
 from ..routes.admin import admin_required
 from datetime import datetime
 
@@ -426,33 +426,66 @@ def toggle_allergy(event_id):
 
 # --- PROMOTE EMAIL BLAST ------------------------------------------------------
 
+# Person types eligible for the promotion blast. Deliberately an explicit
+# allow-list rather than an exclude-list, so a brand-new person_type added
+# later doesn't silently start receiving promotions until someone decides
+# it should. Per Trey: Honoraires don't get promoted to; Aspirants do
+# (even though there happen to be none right now); Guests are event-
+# specific one-offs, excluded on principle even though they rarely have
+# an email on file anyway.
+PROMOTION_ELIGIBLE_TYPES = [
+    "member", "aspirant",
+    "partner", "partner_member_chevalier", "partner_non_member_chevalier",
+]
+
+
 @events_bp.route("/<int:event_id>/promote", methods=["POST"])
 @login_required
 @admin_required
 def send_promotion(event_id):
     event = Event.query.get_or_404(event_id)
-    # Every person with an email address gets the promotion, regardless of
-    # person_type or whether they've ever activated a portal account --
-    # this is meant to reach the whole membership (Chevaliers, Honoraires,
-    # Aspirants, Partners of any kind), not just those who happen to have
-    # logged in before.
     recipients = Person.query.filter(
-        Person.email.isnot(None)
+        Person.email.isnot(None),
+        Person.person_type.in_(PROMOTION_ELIGIBLE_TYPES),
     ).all()
 
+    # Anyone who already has a logged send for this event gets skipped --
+    # this is what makes re-running this route safe after an interruption
+    # (timeout, crash, etc.) instead of re-sending duplicates. See
+    # EventPromotionSend in models.py for why this is tracked per-person
+    # rather than as a single event-level timestamp.
+    already_sent_ids = {row.person_id for row in EventPromotionSend.query
+                         .filter_by(event_id=event.id).all()}
+
     from ..email import send_event_promotion
-    sent, failed = 0, 0
+    sent, skipped, failed = 0, 0, 0
     for person in recipients:
+        if person.id in already_sent_ids:
+            skipped += 1
+            continue
         try:
             send_event_promotion(event, person)
+            db.session.add(EventPromotionSend(event_id=event.id, person_id=person.id,
+                                               sent_at=datetime.utcnow()))
+            db.session.commit()
             sent += 1
         except Exception:
+            db.session.rollback()
             failed += 1
 
-    event.promotion_sent_at = datetime.utcnow()
-    db.session.commit()
+    # "Fully promoted" now means every currently-eligible person has a
+    # logged send -- not just that this particular run finished, since a
+    # run can legitimately end with some people still missing (a real
+    # per-address failure, not just an interrupted request).
+    sent_ids_now = already_sent_ids | {row.person_id for row in EventPromotionSend.query
+                                        .filter_by(event_id=event.id).all()}
+    if all(p.id in sent_ids_now for p in recipients):
+        event.promotion_sent_at = datetime.utcnow()
+        db.session.commit()
 
-    msg = f"Promotion sent to {sent} member{'' if sent==1 else 's'}."
+    msg = f"Promotion sent to {sent} new recipient{'' if sent==1 else 's'}."
+    if skipped:
+        msg += f" {skipped} already had it and {'was' if skipped==1 else 'were'} skipped."
     if failed:
         msg += f" {failed} failed (check email settings)."
     flash(msg, "success" if not failed else "error")

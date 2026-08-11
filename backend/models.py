@@ -254,6 +254,8 @@ class Event(db.Model):
                                       cascade="all, delete-orphan")
     allergy_offs    = db.relationship("EventAllergyOff", back_populates="event",
                                       cascade="all, delete-orphan")
+    promotion_sends = db.relationship("EventPromotionSend", back_populates="event",
+                                      cascade="all, delete-orphan")
     materials       = db.relationship("EventMaterial", back_populates="event",
                                       cascade="all, delete-orphan")
 
@@ -768,6 +770,32 @@ class EventAllergyOff(db.Model):
 
     __table_args__ = (
         db.UniqueConstraint("event_id", "tag_id", name="uq_event_tag_off"),
+    )
+
+
+class EventPromotionSend(db.Model):
+    """One row per (event, person) that has successfully received the
+    promotion email for that event -- Aug 2026, added after a promotion
+    blast timed out mid-send and left no record of who'd actually
+    gotten a copy (see the Aug 11 incident). Deliberately NOT a growing
+    log of every attempt: a person gets at most one row per event,
+    written right after their individual send succeeds (not batched at
+    the end of the whole blast), so a send that's interrupted partway
+    through -- by a timeout, a crash, anything -- can simply be re-run
+    and will skip everyone already recorded here rather than re-sending
+    to them or losing track of who's left."""
+    __tablename__ = "event_promotion_sends"
+
+    id        = db.Column(db.Integer, primary_key=True)
+    event_id  = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    person_id = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=False)
+    sent_at   = db.Column(db.DateTime, nullable=False)
+
+    event     = db.relationship("Event", back_populates="promotion_sends")
+    person    = db.relationship("Person")
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "person_id", name="uq_event_promotion_person"),
     )
 
 
