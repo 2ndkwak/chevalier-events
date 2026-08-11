@@ -1,9 +1,22 @@
 from flask import (Blueprint, render_template, redirect, url_for,
-                   request, flash, jsonify)
+                   request, flash, jsonify, current_app)
 from flask_login import login_required, current_user
 from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag, EventAllergyOff, EventPromotionSend
 from ..routes.admin import admin_required
-from datetime import datetime
+from datetime import datetime, timedelta
+import threading
+import sys
+import traceback
+
+# Under gunicorn, stdout isn't connected to a terminal, so Python
+# block-buffers it by default -- print() statements below would otherwise
+# sit invisible in a buffer indefinitely, especially from a background
+# thread that isn't part of the normal request/response cycle. Same fix
+# already used in routes/seating.py.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
 
 events_bp = Blueprint("events", __name__)
 
@@ -75,7 +88,8 @@ def edit_event(event_id):
         db.session.commit()
         flash("Event updated.", "success")
         return redirect(url_for("events.edit_event", event_id=event.id))
-    return render_template("admin/events/form.html", event=event)
+    return render_template("admin/events/form.html", event=event,
+                           promotion_sending=_promotion_send_in_progress(event))
 
 
 # --- PUBLISH / UNPUBLISH ------------------------------------------------------
@@ -438,57 +452,141 @@ PROMOTION_ELIGIBLE_TYPES = [
     "partner", "partner_member_chevalier", "partner_non_member_chevalier",
 ]
 
+# How long a promotion_send_started_at flag is honored before a new send
+# attempt is allowed to proceed anyway. Covers the case where a prior
+# background send never got to clear the flag -- a crash, a server
+# restart mid-send, anything -- so a stuck flag can't block promotions
+# for this event forever. 15 minutes is a starting guess, not a
+# carefully-measured number; if it turns out too short or too long in
+# practice, it's a one-line change.
+STUCK_SEND_THRESHOLD_MINUTES = 15
+
+
+def _promotion_send_in_progress(event):
+    """True if a background promotion send is currently (recently)
+    running for this event. See STUCK_SEND_THRESHOLD_MINUTES above."""
+    if not event.promotion_send_started_at:
+        return False
+    elapsed = datetime.utcnow() - event.promotion_send_started_at
+    return elapsed < timedelta(minutes=STUCK_SEND_THRESHOLD_MINUTES)
+
+
+def _send_promotion_batch(app, event_id):
+    """The actual promotion-email work, run on a background thread so the
+    HTTP request that kicks it off can return immediately instead of
+    blocking for however long the full recipient list takes to send --
+    see the Aug 11 2026 incident, where that blocking caused a request
+    timeout partway through a ~70-recipient send, and a subsequent retry
+    produced duplicates for some people and nothing for others.
+
+    Runs outside any Flask request, so it needs its own application
+    context (for db.session, url_for, render_template, the mail
+    extension, etc.) -- that's what `with app.app_context():` provides.
+    It ALSO needs a request context, specifically for the _external=True
+    url_for() calls inside send_event_promotion() (building the portal
+    event link and logo URL for the email): Flask normally infers the
+    site's hostname from the real incoming request, and there is no real
+    request here, so url_for(_external=True) raises without one.
+    test_request_context(base_url=...) is Flask's own documented way to
+    provide that outside a real request, scoped to just this thread's
+    work -- see SITE_BASE_URL in app.py's config. (First deploy of this
+    background-thread version hit exactly this: everyone's send failed
+    immediately, silently, until proper error logging below caught it.)
+    Reuses a single SMTP connection for the whole batch (mail.connect())
+    rather than reconnecting per recipient, which was the main reason
+    the original blast was slow enough to time out in the first place.
+
+    Every individual success is logged and committed immediately (same
+    resumable, skip-if-already-logged design as the route itself used
+    before this became a background job), so a batch that's interrupted
+    partway through -- this thread dying with its worker process, for
+    instance -- leaves accurate partial progress rather than an
+    all-or-nothing gap."""
+    base_url = app.config.get("SITE_BASE_URL", "http://localhost:5000")
+    with app.app_context(), app.test_request_context(base_url=base_url):
+        from ..email import send_event_promotion
+        try:
+            event = Event.query.get(event_id)
+            if not event:
+                return
+            recipients = Person.query.filter(
+                Person.email.isnot(None),
+                Person.person_type.in_(PROMOTION_ELIGIBLE_TYPES),
+            ).all()
+            already_sent_ids = {row.person_id for row in EventPromotionSend.query
+                                 .filter_by(event_id=event.id).all()}
+            print(f"[promotion send] event {event_id}: {len(recipients)} eligible, "
+                  f"{len(already_sent_ids)} already logged, "
+                  f"{sum(1 for p in recipients if p.id not in already_sent_ids)} to send now",
+                  flush=True)
+
+            mail = app.extensions["mail"]
+            with mail.connect() as connection:
+                for person in recipients:
+                    if person.id in already_sent_ids:
+                        continue
+                    try:
+                        send_event_promotion(event, person, connection=connection)
+                        db.session.add(EventPromotionSend(event_id=event.id, person_id=person.id,
+                                                           sent_at=datetime.utcnow()))
+                        db.session.commit()
+                    except Exception:
+                        db.session.rollback()
+                        # One bad address (typo, bounced domain, etc.)
+                        # shouldn't stop the rest of the batch -- but it
+                        # must still be visible, or a failure here is
+                        # completely silent (see the Aug 11 2026 "Sending
+                        # never actually sent anything" incident, where an
+                        # earlier version of this except block swallowed
+                        # the real error with no trace at all).
+                        print(f"[promotion send] FAILED for person {person.id} "
+                              f"({person.email}):", flush=True)
+                        traceback.print_exc()
+                        continue
+
+            sent_ids_now = already_sent_ids | {row.person_id for row in EventPromotionSend.query
+                                                .filter_by(event_id=event.id).all()}
+            event = Event.query.get(event_id)
+            if event and all(p.id in sent_ids_now for p in recipients):
+                event.promotion_sent_at = datetime.utcnow()
+        except Exception:
+            print(f"[promotion send] event {event_id}: batch-level failure "
+                  f"(e.g. mail.connect() itself failed):", flush=True)
+            traceback.print_exc()
+        finally:
+            # Always clear the in-progress flag, even if something above
+            # raised (e.g. mail.connect() itself failing) -- otherwise a
+            # single connection failure would leave the event stuck
+            # showing "Sending..." for the full stale-threshold window.
+            event = Event.query.get(event_id)
+            if event:
+                event.promotion_send_started_at = None
+            db.session.commit()
+            db.session.remove()
+
 
 @events_bp.route("/<int:event_id>/promote", methods=["POST"])
 @login_required
 @admin_required
 def send_promotion(event_id):
     event = Event.query.get_or_404(event_id)
-    recipients = Person.query.filter(
-        Person.email.isnot(None),
-        Person.person_type.in_(PROMOTION_ELIGIBLE_TYPES),
-    ).all()
 
-    # Anyone who already has a logged send for this event gets skipped --
-    # this is what makes re-running this route safe after an interruption
-    # (timeout, crash, etc.) instead of re-sending duplicates. See
-    # EventPromotionSend in models.py for why this is tracked per-person
-    # rather than as a single event-level timestamp.
-    already_sent_ids = {row.person_id for row in EventPromotionSend.query
-                         .filter_by(event_id=event.id).all()}
+    if _promotion_send_in_progress(event):
+        flash(f"A promotion send is already in progress for this event "
+              f"(started {event.promotion_send_started_at.strftime('%I:%M %p')}). "
+              f"Please wait for it to finish.", "error")
+        return redirect(url_for("events.edit_event", event_id=event_id))
 
-    from ..email import send_event_promotion
-    sent, skipped, failed = 0, 0, 0
-    for person in recipients:
-        if person.id in already_sent_ids:
-            skipped += 1
-            continue
-        try:
-            send_event_promotion(event, person)
-            db.session.add(EventPromotionSend(event_id=event.id, person_id=person.id,
-                                               sent_at=datetime.utcnow()))
-            db.session.commit()
-            sent += 1
-        except Exception:
-            db.session.rollback()
-            failed += 1
+    event.promotion_send_started_at = datetime.utcnow()
+    db.session.commit()
 
-    # "Fully promoted" now means every currently-eligible person has a
-    # logged send -- not just that this particular run finished, since a
-    # run can legitimately end with some people still missing (a real
-    # per-address failure, not just an interrupted request).
-    sent_ids_now = already_sent_ids | {row.person_id for row in EventPromotionSend.query
-                                        .filter_by(event_id=event.id).all()}
-    if all(p.id in sent_ids_now for p in recipients):
-        event.promotion_sent_at = datetime.utcnow()
-        db.session.commit()
+    app = current_app._get_current_object()
+    thread = threading.Thread(target=_send_promotion_batch, args=(app, event_id), daemon=True)
+    thread.start()
 
-    msg = f"Promotion sent to {sent} new recipient{'' if sent==1 else 's'}."
-    if skipped:
-        msg += f" {skipped} already had it and {'was' if skipped==1 else 'were'} skipped."
-    if failed:
-        msg += f" {failed} failed (check email settings)."
-    flash(msg, "success" if not failed else "error")
+    flash("Promotion email send started in the background. This page will "
+          "show \"Sending...\" until it's done -- refresh to check progress.",
+          "success")
     return redirect(url_for("events.edit_event", event_id=event_id))
 
 

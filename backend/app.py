@@ -27,6 +27,27 @@ def create_app(config=None):
         SECRET_KEY="change-this-in-production",
         SQLALCHEMY_DATABASE_URI="sqlite:///../instance/chevalier.db",
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        # SQLite's default is to fail an operation immediately ("database
+        # is locked") if it can't get a write lock, rather than waiting.
+        # The Aug 2026 background-thread promotion send (see routes/
+        # events.py) does many small commits over a stretch of time while
+        # the app may also be handling other requests, which is exactly
+        # the situation that makes a collision more likely than it's been
+        # so far -- this gives any writer a few seconds to retry instead
+        # of erroring outright. Applies app-wide, not just to that one
+        # feature.
+        SQLALCHEMY_ENGINE_OPTIONS={"connect_args": {"timeout": 15}},
+
+        # Base URL used to build absolute links (portal event pages, the
+        # logo image) in emails sent from outside a real HTTP request --
+        # currently just the Aug 2026 background promotion-send worker
+        # (routes/events.py). Deliberately NOT the same thing as Flask's
+        # own SERVER_NAME setting, which also affects Host-header
+        # validation on every real incoming request and is riskier to
+        # set globally without being certain of the deployment's exact
+        # hostname/proxy setup. Override in instance/config.py if this
+        # Sous Commanderie's domain is ever different.
+        SITE_BASE_URL="https://clevelandchevaliers.com",
 
         # Mail -- admin fills these in config.py
         MAIL_SERVER="smtp.gmail.com",
@@ -142,6 +163,7 @@ def _auto_migrate():
         ("events", "allergies_reviewed_at",         "DATETIME"),
         ("events", "wine_tags_generated_at",        "DATETIME"),
         ("events", "promotion_sent_at",              "DATETIME"),
+        ("events", "promotion_send_started_at",       "DATETIME"),
         ("events", "name_badges_generated_at",      "DATETIME"),
     ]
     with db.engine.connect() as conn:

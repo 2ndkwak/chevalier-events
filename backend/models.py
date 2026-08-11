@@ -233,6 +233,14 @@ class Event(db.Model):
     allergies_reviewed_at       = db.Column(db.DateTime, nullable=True)
     wine_tags_generated_at      = db.Column(db.DateTime, nullable=True)
     promotion_sent_at           = db.Column(db.DateTime, nullable=True)
+    # Set while a background promotion send is actively running (Aug 2026,
+    # Part B of the promotion-blast fix); cleared when that send finishes,
+    # one way or another. Guards against a second click launching a second
+    # concurrent send for the same event. A run interrupted hard enough
+    # that this never gets cleared (crash, server restart) is treated as
+    # stale after STUCK_SEND_THRESHOLD_MINUTES (see routes/events.py) and
+    # a fresh attempt is allowed through rather than requiring a manual fix.
+    promotion_send_started_at   = db.Column(db.DateTime, nullable=True)
     name_badges_generated_at    = db.Column(db.DateTime, nullable=True)
 
     created_at      = db.Column(db.DateTime, default=datetime.utcnow)

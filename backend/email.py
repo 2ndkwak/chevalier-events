@@ -120,14 +120,21 @@ Waitlist: {sum(1 for r in event.rsvps if r.status == 'waitlist')}
     mail.send(msg)
 
 
-def send_event_promotion(event, person):
+def send_event_promotion(event, person, connection=None):
     """Send an event announcement email to a single member or partner.
     Sends both an HTML version (so a PayPal/payment link or any other
     link, bold/italic, or list entered in the event's description editor
     actually renders as such -- see the Aug 2026 link-button addition to
     that editor) and a plain-text fallback for clients that don't render
     HTML mail, with links rendered as 'text (url)' so the URL itself is
-    still visible and usable there too."""
+    still visible and usable there too.
+
+    `connection` is an optional flask_mail Connection (from mail.connect())
+    for reusing one SMTP connection across a whole batch instead of
+    opening a new one per recipient -- see the Aug 2026 background
+    promotion-send worker in routes/events.py, which is where this
+    matters: reconnecting per-email was the main reason the original
+    blast took long enough to time out in the first place."""
     if not person.email:
         return
 
@@ -166,8 +173,11 @@ Confrerie des Chevaliers du Tastevin
                                  logo_url=logo_url)
 
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    if connection is not None:
+        connection.send(msg)
+    else:
+        mail = current_app.extensions["mail"]
+        mail.send(msg)
 
 
 def send_invite_email(person, token):

@@ -38,19 +38,23 @@
         <form method="POST" action="{{ url_for('events.unpublish_event', event_id=event.id) }}" style="display:inline;">
           <button class="btn btn-outline btn-sm">Unpublish</button>
         </form>
-        <form method="POST" action="{{ url_for('events.send_promotion', event_id=event.id) }}" style="display:inline;">
-          <button class="btn btn-gold btn-sm"
-                  onclick="return confirm('Send promotion email to all members?')">
-            [Email] Send promotion email
-          </button>
-        </form>
-        <form method="POST" action="{{ url_for('events.send_promotion_test', event_id=event.id) }}" style="display:inline;">
-          <button class="btn btn-outline btn-sm" type="submit">
-            Send test copy to myself
-          </button>
-        </form>
+        {% if promotion_sending %}
+          <span class="btn btn-gold btn-sm" style="opacity:.6; cursor:default;" aria-disabled="true">
+            [Email] Sending...
+          </span>
+        {% else %}
+          <form method="POST" action="{{ url_for('events.send_promotion', event_id=event.id) }}" style="display:inline;">
+            <button class="btn btn-gold btn-sm"
+                    onclick="return confirm('Send promotion email to all members?')">
+              [Email] Send promotion email
+            </button>
+          </form>
+        {% endif %}
         <span style="font-size:.8rem; display:inline-flex; align-items:center; gap:.3rem;">
-          {% if event.promoted %}
+          {% if promotion_sending %}
+            <span style="color:var(--gold);" aria-hidden="true">&#8635;</span>
+            <span class="text-muted">Sending... (started {{ event.promotion_send_started_at.strftime('%I:%M %p') }})</span>
+          {% elif event.promoted %}
             <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
             <span class="text-muted">Sent {{ event.promotion_sent_at.strftime('%b %d') }}</span>
           {% else %}
@@ -58,6 +62,11 @@
             <span class="text-muted">Not yet sent</span>
           {% endif %}
         </span>
+        <form method="POST" action="{{ url_for('events.send_promotion_test', event_id=event.id) }}" style="display:inline;">
+          <button class="btn btn-outline btn-sm" type="submit">
+            Send test copy to myself
+          </button>
+        </form>
       {% else %}
         <form method="POST" action="{{ url_for('events.publish_event', event_id=event.id) }}" style="display:inline;">
           <button class="btn btn-primary btn-sm">Publish to portal</button>
