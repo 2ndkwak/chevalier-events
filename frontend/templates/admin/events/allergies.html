@@ -15,7 +15,7 @@
   <span style="font-size:.85rem; display:inline-flex; align-items:center; gap:.35rem;">
     {% if event.allergies_reviewed %}
       <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
-      <span style="color:var(--ink-muted);">Marked correct {{ event.allergies_reviewed_at.strftime('%b %d') }}</span>
+      <span style="color:var(--ink-muted);">Marked correct <span data-utc-time="{{ event.allergies_reviewed_at.isoformat() }}Z" data-utc-time-format="date">{{ event.allergies_reviewed_at.strftime('%b %d') }} UTC</span></span>
     {% else %}
       <span style="color:var(--ink-muted);" aria-hidden="true">&#9675;</span>
       <span style="color:var(--ink-muted);">Not yet marked correct</span>

@@ -481,7 +481,7 @@
             <span style="color:var(--ink-muted);">Not yet accepted</span>
           {% elif seating_accepted %}
             <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
-            <span style="color:var(--ink-muted);">Accepted {{ event.seating_accepted_at.strftime('%b %d') }}</span>
+            <span style="color:var(--ink-muted);">Accepted <span data-utc-time="{{ event.seating_accepted_at.isoformat() }}Z" data-utc-time-format="date">{{ event.seating_accepted_at.strftime('%b %d') }} UTC</span></span>
           {% else %}
             <span style="color:var(--gold);" aria-hidden="true">&#9888;</span>
             <span style="color:var(--gold);">Chart changed since acceptance -- accept again if this is ready</span>

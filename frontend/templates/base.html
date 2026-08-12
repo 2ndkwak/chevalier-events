@@ -437,6 +437,34 @@
   <p>Confrérie des Chevaliers du Tastevin &nbsp;·&nbsp; Chevalier Events</p>
 </footer>
 
+<script>
+  // Convert any timestamp marked with data-utc-time into the viewer's own
+  // local time, in the browser. Server-side, every stored timestamp is
+  // UTC but has no timezone label attached (SQLite strips timezone info
+  // on every round-trip regardless of how a value was written, so the
+  // server can't reliably do this conversion itself) -- so templates
+  // render a UTC-labeled fallback (visible if JS is off) plus the raw
+  // UTC value in data-utc-time, and this replaces that text with the
+  // correct local time once the browser -- which always knows its own
+  // timezone -- has a chance to run. Works automatically for any Sous
+  // Commanderie's admins, wherever they are, without the server ever
+  // needing to know or guess a timezone.
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("[data-utc-time]").forEach(function (el) {
+      var d = new Date(el.getAttribute("data-utc-time"));
+      if (isNaN(d.getTime())) return;  // leave the UTC fallback text as-is
+      var fmt = el.getAttribute("data-utc-time-format") || "datetime";
+      if (fmt === "date") {
+        el.textContent = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      } else {
+        el.textContent = d.toLocaleString(undefined, {
+          month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+        });
+      }
+    });
+  });
+</script>
+
 {% block scripts %}{% endblock %}
 </body>
 </html>

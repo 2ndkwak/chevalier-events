@@ -181,7 +181,7 @@
             </form>
           </details>
         </td>
-        <td class="text-sm text-muted">{{ rsvp.created_at.strftime("%b %d") }}</td>
+        <td class="text-sm text-muted"><span data-utc-time="{{ rsvp.created_at.isoformat() }}Z" data-utc-time-format="date">{{ rsvp.created_at.strftime("%b %d") }} UTC</span></td>
         <td>
           <div class="actions">
             <a href="{{ url_for('events.edit_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
@@ -219,7 +219,7 @@
           {% if rsvp.guests %}{{ rsvp.guests|length }} guest{{ 's' if rsvp.guests|length!=1 }}{% else %}—{% endif %}
         </td>
         <td class="text-sm text-muted">
-          {% if rsvp.promotion_expires_at %}{{ rsvp.promotion_expires_at.strftime("%b %d at %I:%M %p") }}{% endif %}
+          {% if rsvp.promotion_expires_at %}<span data-utc-time="{{ rsvp.promotion_expires_at.isoformat() }}Z" data-utc-time-format="datetime">{{ rsvp.promotion_expires_at.strftime("%b %d at %I:%M %p") }} UTC</span>{% endif %}
         </td>
         <td>
           <div class="actions">
@@ -303,7 +303,7 @@
             </form>
           </details>
         </td>
-        <td class="text-sm text-muted">{{ rsvp.created_at.strftime("%b %d") }}</td>
+        <td class="text-sm text-muted"><span data-utc-time="{{ rsvp.created_at.isoformat() }}Z" data-utc-time-format="date">{{ rsvp.created_at.strftime("%b %d") }} UTC</span></td>
         <td>
           <div class="actions">
             <form method="POST"
@@ -334,7 +334,7 @@
       {% for rsvp in declined %}
       <tr>
         <td>{{ rsvp.person.display_name }}</td>
-        <td class="text-sm text-muted">{{ rsvp.updated_at.strftime("%b %d") }}</td>
+        <td class="text-sm text-muted"><span data-utc-time="{{ rsvp.updated_at.isoformat() }}Z" data-utc-time-format="date">{{ rsvp.updated_at.strftime("%b %d") }} UTC</span></td>
         <td>
           <form method="POST"
                 action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}">

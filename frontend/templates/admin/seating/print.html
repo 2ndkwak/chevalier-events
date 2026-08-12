@@ -468,10 +468,10 @@
     {{ label }} <span style="color:var(--ink-muted); font-size:.78rem;">(not yet {{ verb }})</span>
   {% elif current %}
     <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
-    {{ label }} <span style="color:var(--ink-muted); font-size:.78rem;">({{ verb }} {{ done_at.strftime('%b %d') }})</span>
+    {{ label }} <span style="color:var(--ink-muted); font-size:.78rem;">({{ verb }} <span data-utc-time="{{ done_at.isoformat() }}Z" data-utc-time-format="date">{{ done_at.strftime('%b %d') }} UTC</span>)</span>
   {% else %}
     <span style="color:var(--gold);" aria-hidden="true">&#9888;</span>
-    {{ label }} <span style="color:var(--gold); font-size:.78rem;">({{ stale_because|join('/') }} changed since {{ verb }} {{ done_at.strftime('%b %d') }} -- worth doing again)</span>
+    {{ label }} <span style="color:var(--gold); font-size:.78rem;">({{ stale_because|join('/') }} changed since {{ verb }} <span data-utc-time="{{ done_at.isoformat() }}Z" data-utc-time-format="date">{{ done_at.strftime('%b %d') }} UTC</span> -- worth doing again)</span>
   {% endif %}
 </span>
 {% endmacro %}
@@ -482,10 +482,10 @@
   {% set tip = label ~ " — not yet printed" %}
 {% elif current %}
   {% set cls = "done" %}
-  {% set tip = label ~ " — printed " ~ done_at.strftime('%b %d') %}
+  {% set tip = label ~ " — printed " ~ done_at.strftime('%b %d') ~ " UTC" %}
 {% else %}
   {% set cls = "stale" %}
-  {% set tip = label ~ " — " ~ (stale_because|join('/')) ~ " changed since printed " ~ done_at.strftime('%b %d') ~ " -- worth doing again" %}
+  {% set tip = label ~ " — " ~ (stale_because|join('/')) ~ " changed since printed " ~ done_at.strftime('%b %d') ~ " UTC -- worth doing again" %}
 {% endif %}
 <span class="chart-item-badge {{ cls }}" title="{{ tip }}">{% if cls == "done" %}&#10003;{% else %}{{ num }}{% endif %}</span>
 {% endmacro %}
@@ -738,6 +738,26 @@
 </div>
 
 <script>
+  // Convert any timestamp marked with data-utc-time into the viewer's own
+  // local time -- same mechanism as base.html's copy, duplicated here
+  // because this page is a standalone document (its own DOCTYPE/head,
+  // printed separately from the rest of the admin UI) and doesn't extend
+  // base.html, so that copy never reaches this page.
+  document.addEventListener("DOMContentLoaded", function () {
+    document.querySelectorAll("[data-utc-time]").forEach(function (el) {
+      var d = new Date(el.getAttribute("data-utc-time"));
+      if (isNaN(d.getTime())) return;
+      var fmt = el.getAttribute("data-utc-time-format") || "datetime";
+      if (fmt === "date") {
+        el.textContent = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+      } else {
+        el.textContent = d.toLocaleString(undefined, {
+          month: "short", day: "numeric", hour: "numeric", minute: "2-digit"
+        });
+      }
+    });
+  });
+
   // ── Position seats in circles ────────────────────────────────────────────
   function layoutCircles() {
     document.querySelectorAll('.chart-circle').forEach(circle => {

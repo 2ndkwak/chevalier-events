@@ -170,7 +170,7 @@
             A seat is being held for you
           </div>
           <div class="text-muted text-sm" style="margin-top:.4rem;">
-            Please confirm by {{ my_rsvp.promotion_expires_at.strftime("%B %d at %I:%M %p") }}
+            Please confirm by <span data-utc-time="{{ my_rsvp.promotion_expires_at.isoformat() }}Z" data-utc-time-format="datetime">{{ my_rsvp.promotion_expires_at.strftime("%B %d at %I:%M %p") }} UTC</span>
             or the seat will pass to the next person on the waitlist.
           </div>
         </div>

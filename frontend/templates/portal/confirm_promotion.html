@@ -45,7 +45,7 @@
           {{ event.title }} — {{ event.event_date.strftime("%A, %B %d, %Y") }}
         </p>
         <p class="text-muted text-sm" style="margin-top:.5rem;">
-          Please confirm by {{ rsvp.promotion_expires_at.strftime("%B %d at %I:%M %p") }}
+          Please confirm by <span data-utc-time="{{ rsvp.promotion_expires_at.isoformat() }}Z" data-utc-time-format="datetime">{{ rsvp.promotion_expires_at.strftime("%B %d at %I:%M %p") }} UTC</span>
           or the seat will pass to the next person on the waitlist.
         </p>
       {% endif %}

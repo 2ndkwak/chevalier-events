@@ -357,7 +357,7 @@
     </div>
     {% if person.invite_sent_at %}
     <p class="text-muted text-sm">
-      Invitation sent {{ person.invite_sent_at.strftime("%B %d at %I:%M %p") }} —
+      Invitation sent <span data-utc-time="{{ person.invite_sent_at.isoformat() }}Z" data-utc-time-format="datetime">{{ person.invite_sent_at.strftime("%B %d at %I:%M %p") }} UTC</span> —
       awaiting activation.
     </p>
     {% endif %}
