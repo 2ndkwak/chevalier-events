@@ -45,7 +45,7 @@
         {% else %}
           <form method="POST" action="{{ url_for('events.send_promotion', event_id=event.id) }}" style="display:inline;">
             <button class="btn btn-gold btn-sm"
-                    onclick="return confirm('Send promotion email to all members?')">
+                    onclick="return confirm('Send promotion email to everyone who hasn\'t received it yet?')">
               [Email] Send promotion email
             </button>
           </form>
