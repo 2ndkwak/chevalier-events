@@ -2,6 +2,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, date
+from .util import utcnow
 
 db = SQLAlchemy()
 
@@ -165,7 +166,7 @@ class DietaryTag(db.Model):
         new_tag_ids = {t.id for t in tags}
         owner.dietary_tags = tags
         if hasattr(owner, "dietary_tags_updated_at") and old_tag_ids != new_tag_ids:
-            owner.dietary_tags_updated_at = datetime.utcnow()
+            owner.dietary_tags_updated_at = utcnow()
 
     def __repr__(self):
         return f"<DietaryTag {self.id} '{self.label}'>"
@@ -497,7 +498,7 @@ class Event(db.Model):
         change to what a milestone *means* belongs on that milestone's own
         property/method, not here.
         """
-        now = now or datetime.utcnow()
+        now = now or utcnow()
 
         def two_state(label, done):
             return {"label": label,

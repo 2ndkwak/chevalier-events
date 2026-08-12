@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, redirect, url_for
 from flask_login import login_required, current_user
 from datetime import date, datetime, timedelta
+from ..util import utcnow
 from ..models import Person, Event, RSVP
 
 admin_bp = Blueprint("admin", __name__)
@@ -21,7 +22,7 @@ def admin_required(f):
 @admin_required
 def dashboard():
     today = date.today()
-    now = datetime.utcnow()
+    now = utcnow()
     upcoming = (Event.query
                 .filter(Event.is_published == True,
                         Event.event_date >= f"{today}")

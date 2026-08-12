@@ -37,9 +37,10 @@ def logout():
 def forgot_password():
     if request.method == "POST":
         import secrets
-        from datetime import datetime, timedelta
+        from datetime import timedelta
         from ..models import db
         from ..email import send_password_reset_email
+        from ..util import utcnow
 
         email  = request.form.get("email", "").strip().lower()
         person = Person.query.filter_by(email=email, can_login=True).first()
@@ -47,7 +48,7 @@ def forgot_password():
         if person:
             token = secrets.token_urlsafe(32)
             person.reset_token = token
-            person.reset_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+            person.reset_token_expires_at = utcnow() + timedelta(hours=1)
             db.session.commit()
             try:
                 send_password_reset_email(person, token)
@@ -65,11 +66,11 @@ def forgot_password():
 
 @auth_bp.route("/reset-password/<token>", methods=["GET", "POST"])
 def reset_password(token):
-    from datetime import datetime
     from ..models import db
+    from ..util import utcnow
 
     person = Person.query.filter_by(reset_token=token).first_or_404()
-    expired = (not person.reset_token_expires_at) or datetime.utcnow() > person.reset_token_expires_at
+    expired = (not person.reset_token_expires_at) or utcnow() > person.reset_token_expires_at
 
     if request.method == "POST" and not expired:
         pw  = request.form.get("password", "").strip()

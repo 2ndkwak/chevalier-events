@@ -16,6 +16,7 @@ even after the normal RSVP deadline has closed.
 """
 import secrets
 from datetime import datetime, timedelta
+from .util import utcnow
 
 from .models import db, RSVP
 
@@ -105,8 +106,8 @@ def promote_from_waitlist(event, cancelled_by=None):
 
         for pr in party_rows:
             pr.status = "promoted"
-            pr.promoted_at = datetime.utcnow()
-            pr.promotion_expires_at = datetime.utcnow() + PROMOTION_WINDOW
+            pr.promoted_at = utcnow()
+            pr.promotion_expires_at = utcnow() + PROMOTION_WINDOW
             pr.promotion_token = secrets.token_urlsafe(32)
             pr.cancelled_by_id = cancelled_by.id if cancelled_by else None
             promoted.append(pr)

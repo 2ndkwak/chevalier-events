@@ -5,6 +5,7 @@ from ..models import db, Person, DietaryTag, RSVP
 from ..routes.admin import admin_required
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
+from ..util import utcnow
 import secrets, string
 import threading
 import sys
@@ -326,7 +327,7 @@ def _person_from_form(person, form):
     person.person_type    = form.get("person_type", person.person_type or "member")
     if old_person_type and old_person_type != person.person_type:
         from datetime import datetime
-        person.person_type_updated_at = datetime.utcnow()
+        person.person_type_updated_at = utcnow()
     person.title          = form.get("title", "").strip() or None
     person.first_name     = form.get("first_name", "").strip()
     person.last_name      = form.get("last_name", "").strip()
@@ -401,7 +402,7 @@ def send_invite(person_id):
 
     token = secrets.token_urlsafe(32)
     person.invite_token   = token
-    person.invite_sent_at = datetime.utcnow()
+    person.invite_sent_at = utcnow()
     person.can_login      = False   # they'll activate on first login
     db.session.commit()
 
@@ -496,7 +497,7 @@ def _send_invite_batch(app, person_ids):
                         continue
                     token = secrets.token_urlsafe(32)
                     person.invite_token   = token
-                    person.invite_sent_at = datetime.utcnow()
+                    person.invite_sent_at = utcnow()
                     db.session.commit()
                     try:
                         send_invite_email(person, token, connection=connection)
@@ -550,7 +551,7 @@ def resend_outstanding_invites():
     just applied to the whole outstanding batch via the shared background
     worker. A short cutoff (5 days) keeps this from immediately re-nagging
     someone invited yesterday the first time this button gets clicked."""
-    cutoff = datetime.utcnow() - timedelta(days=5)
+    cutoff = utcnow() - timedelta(days=5)
     candidates = Person.query.filter(
         Person.invite_sent_at.isnot(None),
         Person.can_login == False,

@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag, EventAllergyOff, EventPromotionSend
 from ..routes.admin import admin_required
 from datetime import datetime, timedelta
+from ..util import utcnow
 import threading
 import sys
 import traceback
@@ -28,7 +29,7 @@ events_bp = Blueprint("events", __name__)
 @admin_required
 def list_events():
     show = request.args.get("show", "upcoming")  # upcoming | past | all
-    now = datetime.utcnow()
+    now = utcnow()
     if show == "upcoming":
         events = (Event.query
                   .filter(Event.event_date >= now)
@@ -412,7 +413,7 @@ def mark_allergies_reviewed(event_id):
     considers it correct for this event. Deliberately never resets on its
     own; see Event.allergies_reviewed."""
     event = Event.query.get_or_404(event_id)
-    event.allergies_reviewed_at = datetime.utcnow()
+    event.allergies_reviewed_at = utcnow()
     db.session.commit()
     flash("Allergy list marked correct for event.", "success")
     return redirect(url_for("events.allergies", event_id=event_id))
@@ -467,7 +468,7 @@ def _promotion_send_in_progress(event):
     running for this event. See STUCK_SEND_THRESHOLD_MINUTES above."""
     if not event.promotion_send_started_at:
         return False
-    elapsed = datetime.utcnow() - event.promotion_send_started_at
+    elapsed = utcnow() - event.promotion_send_started_at
     return elapsed < timedelta(minutes=STUCK_SEND_THRESHOLD_MINUTES)
 
 
@@ -528,7 +529,7 @@ def _send_promotion_batch(app, event_id):
                     try:
                         send_event_promotion(event, person, connection=connection)
                         db.session.add(EventPromotionSend(event_id=event.id, person_id=person.id,
-                                                           sent_at=datetime.utcnow()))
+                                                           sent_at=utcnow()))
                         db.session.commit()
                     except Exception:
                         db.session.rollback()
@@ -548,7 +549,7 @@ def _send_promotion_batch(app, event_id):
                                                 .filter_by(event_id=event.id).all()}
             event = Event.query.get(event_id)
             if event and all(p.id in sent_ids_now for p in recipients):
-                event.promotion_sent_at = datetime.utcnow()
+                event.promotion_sent_at = utcnow()
         except Exception:
             print(f"[promotion send] event {event_id}: batch-level failure "
                   f"(e.g. mail.connect() itself failed):", flush=True)
@@ -577,7 +578,7 @@ def send_promotion(event_id):
               f"Please wait for it to finish.", "error")
         return redirect(url_for("events.edit_event", event_id=event_id))
 
-    event.promotion_send_started_at = datetime.utcnow()
+    event.promotion_send_started_at = utcnow()
     db.session.commit()
 
     app = current_app._get_current_object()

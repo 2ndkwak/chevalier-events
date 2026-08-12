@@ -4,6 +4,7 @@ from flask_login import login_required, current_user
 from ..models import db, Event, RSVP, RSVPGuest, Person, SeatAssignment, SeatingRule, WineTag, EventAllergyOff, MenuItem, EventCourse
 from ..routes.admin import admin_required
 from datetime import datetime
+from ..util import utcnow
 import json
 import sys
 
@@ -460,7 +461,7 @@ def propose_seating_fast(event_id):
 
         was_accepted, _ = event.seating_is_accepted()
         _assign_seats_from_party_tables(event_id, parties, party_table, locked)
-        event.seating_updated_at = datetime.utcnow()
+        event.seating_updated_at = utcnow()
         db.session.commit()
         if was_accepted:
             flash("The seating plan was previously accepted -- Table Name Cards and "
@@ -513,7 +514,7 @@ def clear_seating(event_id):
     if keep_locked:
         q = q.filter_by(is_locked=False)
     q.delete()
-    event.seating_updated_at = datetime.utcnow()
+    event.seating_updated_at = utcnow()
     db.session.commit()
     flash("Seating cleared." + (" Locked seats retained." if keep_locked else ""), "success")
     if was_accepted:
@@ -560,7 +561,7 @@ def save_canvas(event_id):
                 )
                 db.session.add(sa)
 
-    event.seating_updated_at = datetime.utcnow()
+    event.seating_updated_at = utcnow()
     db.session.commit()
     return jsonify({"ok": True, "seating_was_accepted": was_accepted})
 
@@ -593,7 +594,7 @@ def accept_seating(event_id):
     automatically (via Event.seating_is_accepted()) the moment the chart
     is regenerated, cleared, or manually re-saved afterward."""
     event = Event.query.get_or_404(event_id)
-    event.seating_accepted_at = datetime.utcnow()
+    event.seating_accepted_at = utcnow()
     db.session.commit()
     flash("Final seating plan accepted.", "success")
     return redirect(url_for("seating.seating_home", event_id=event_id))
@@ -618,7 +619,7 @@ def mark_charts_printed(event_id):
     rather than erroring, so an old cached page or an unexpected client
     doesn't break the print button."""
     event = Event.query.get_or_404(event_id)
-    now = datetime.utcnow()
+    now = utcnow()
 
     which_field = {
         "visual":           "charts_visual_printed_at",
@@ -793,7 +794,7 @@ def export_namecards(event_id):
         flash(f"Export failed: {e}", "error")
         return redirect(url_for("seating.print_seating", event_id=event_id))
 
-    event.table_cards_generated_at = datetime.utcnow()
+    event.table_cards_generated_at = utcnow()
     db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
@@ -851,7 +852,7 @@ def export_namebadges(event_id):
         flash(f"Export failed: {e}", "error")
         return redirect(url_for("seating.print_seating", event_id=event_id))
 
-    event.name_badges_generated_at = datetime.utcnow()
+    event.name_badges_generated_at = utcnow()
     db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
@@ -962,7 +963,7 @@ def wine_tags(event_id):
                         WineTag.query.filter_by(event_id=event_id).delete()
                         for w in new_wines:
                             db.session.add(WineTag(event_id=event_id, **w))
-                        event.wine_list_updated_at = datetime.utcnow()
+                        event.wine_list_updated_at = utcnow()
                         db.session.commit()
                         flash(f"Wine list saved -- {len(new_wines)} wines.", "success")
                         return redirect(url_for("seating.wine_tags", event_id=event_id))
@@ -1052,7 +1053,7 @@ def print_wine_tags(event_id):
         flash(f"Wine tag generation failed: {e}", "error")
         return redirect(url_for("seating.wine_tags", event_id=event_id))
 
-    event.wine_tags_generated_at = datetime.utcnow()
+    event.wine_tags_generated_at = utcnow()
     db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
@@ -1190,7 +1191,7 @@ def menu_items(event_id):
                                 db.session.add(EventCourse(event_id=event_id,
                                                            course=course_num, label=label))
 
-                        event.menu_updated_at = datetime.utcnow()
+                        event.menu_updated_at = utcnow()
                         db.session.commit()
                         flash(f"Menu saved -- {len(new_items)} course(s).", "success")
                         return redirect(url_for("seating.menu_items", event_id=event_id))
@@ -1261,7 +1262,7 @@ def officer_ranking(event_id):
                 g = RSVPGuest.query.get(gid)
                 if g:
                     g.officer_rank = rank
-        event.officer_ranking_updated_at = datetime.utcnow()
+        event.officer_ranking_updated_at = utcnow()
         db.session.commit()
         flash("Officer ranking saved.", "success")
         return redirect(url_for("seating.officer_ranking", event_id=event_id))
@@ -1613,7 +1614,7 @@ def generate_booklet(event_id):
         flash(f"Booklet generation failed: {e}", "error")
         return redirect(url_for("seating.menu_items", event_id=event_id))
 
-    event.booklet_generated_at = datetime.utcnow()
+    event.booklet_generated_at = utcnow()
     db.session.commit()
 
     safe_title = "".join(c for c in event.title if c.isalnum() or c in " -_")
