@@ -1,10 +1,23 @@
 from flask import (Blueprint, render_template, redirect, url_for,
-                   request, flash, jsonify)
+                   request, flash, jsonify, current_app)
 from flask_login import login_required
 from ..models import db, Person, DietaryTag, RSVP
 from ..routes.admin import admin_required
 from werkzeug.security import generate_password_hash
+from datetime import datetime, timedelta
 import secrets, string
+import threading
+import sys
+import traceback
+
+# Under gunicorn, stdout isn't connected to a terminal, so Python
+# block-buffers it by default -- print() statements from a background
+# thread would otherwise sit invisible in a buffer indefinitely. Same
+# fix already used in routes/seating.py and routes/events.py.
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+except Exception:
+    pass
 
 members_bp = Blueprint("members", __name__)
 
@@ -425,15 +438,87 @@ def accept_invite(token):
     return render_template("portal/accept_invite.html", person=person)
 
 
+def _send_invite_batch(app, person_ids):
+    """Shared background worker for bulk_invite() and
+    resend_outstanding_invites() -- they differ only in which person_ids
+    they hand this. Runs on a background thread so the request that
+    kicks it off returns immediately instead of blocking for however
+    long the whole batch takes -- see the Aug 2026 promotion-email
+    incident (routes/events.py, _send_promotion_batch) this exact
+    pattern was built to fix, applied here before it could cause the
+    same problem: this is precisely the kind of "invite the whole
+    roster" blast a brand-new Sous Commanderie would run soon after
+    getting set up.
+
+    Each person's token is committed to the database IMMEDIATELY, right
+    after it's generated and BEFORE that person's email is even
+    attempted -- not batched at the end of the loop like the code this
+    replaced. Two reasons:
+      1. Resumability: if this thread dies partway through (crash,
+         worker restart, anything), whoever already has a committed
+         token is naturally excluded from a future run's candidate
+         query (bulk_invite excludes anyone with a token; resend
+         excludes anyone whose invite_sent_at is too recent), so a
+         retry only reaches whoever still needs it -- no new tracking
+         table required, the existing columns already do this job once
+         the commit happens at the right time.
+      2. Correctness: the OLD batch-commit-at-the-end version could, if
+         interrupted after some emails had already gone out but before
+         the single final commit, leave a real person holding a dead
+         link -- their token was in the sent email but never actually
+         saved to the database. Committing per-person before sending
+         means a token that goes out in an email is always already
+         valid in the database, even if this thread never gets any
+         further.
+
+    Reuses one SMTP connection for the whole batch (mail.connect())
+    rather than reconnecting per recipient, matching the promotion
+    worker's fix for the same slow-reconnect problem.
+
+    No cross-process "already running" lock -- unlike the promotion
+    button, there's no single natural place to hang one (this isn't
+    scoped to one event), and this is a rare, deliberate admin action
+    rather than something someone impatiently re-clicks. Committing
+    each person's token before attempting their send shrinks a genuine
+    double-launch's danger window down to just the moment between the
+    initial candidate query and that person's own commit, rather than
+    the full multi-minute duration of the whole batch."""
+    base_url = app.config.get("SITE_BASE_URL", "http://localhost:5000")
+    with app.app_context(), app.test_request_context(base_url=base_url):
+        from ..email import send_invite_email
+        sent, failed = 0, 0
+        try:
+            mail = app.extensions["mail"]
+            with mail.connect() as connection:
+                for person_id in person_ids:
+                    person = Person.query.get(person_id)
+                    if not person or not person.email or person.can_login:
+                        continue
+                    token = secrets.token_urlsafe(32)
+                    person.invite_token   = token
+                    person.invite_sent_at = datetime.utcnow()
+                    db.session.commit()
+                    try:
+                        send_invite_email(person, token, connection=connection)
+                        sent += 1
+                    except Exception:
+                        failed += 1
+                        print(f"[invite send] FAILED for person {person_id} "
+                              f"({person.email}):", flush=True)
+                        traceback.print_exc()
+            print(f"[invite send] batch complete: {sent} sent, {failed} failed",
+                  flush=True)
+        except Exception:
+            print("[invite send] batch-level failure (e.g. mail.connect() "
+                  "itself failed):", flush=True)
+            traceback.print_exc()
+
+
 @members_bp.route("/bulk-invite", methods=["POST"])
 @login_required
 @admin_required
 def bulk_invite():
     """Send invitation emails to all members with email but no portal access."""
-    import secrets
-    from datetime import datetime
-    from ..email import send_invite_email
-
     candidates = Person.query.filter(
         Person.email.isnot(None),
         Person.can_login == False,
@@ -441,22 +526,17 @@ def bulk_invite():
         Person.person_type.in_(["member", "honoraire", "aspirant"]),
     ).all()
 
-    sent = failed = 0
-    for person in candidates:
-        token = secrets.token_urlsafe(32)
-        person.invite_token   = token
-        person.invite_sent_at = datetime.utcnow()
-        try:
-            send_invite_email(person, token)
-            sent += 1
-        except Exception:
-            failed += 1
-    db.session.commit()
+    if not candidates:
+        flash("No members currently need an invitation.", "success")
+        return redirect(url_for("members.list_members"))
 
-    msg = f"Invitations sent to {sent} member(s)."
-    if failed:
-        msg += f" {failed} failed (check email settings)."
-    flash(msg, "success" if not failed else "warning")
+    person_ids = [p.id for p in candidates]
+    app = current_app._get_current_object()
+    thread = threading.Thread(target=_send_invite_batch, args=(app, person_ids), daemon=True)
+    thread.start()
+
+    flash(f"Sending invitations to {len(person_ids)} member(s) in the "
+          f"background -- refresh in a bit to see updated status.", "success")
     return redirect(url_for("members.list_members"))
 
 
@@ -465,15 +545,11 @@ def bulk_invite():
 @admin_required
 def resend_outstanding_invites():
     """Re-send the invitation email to everyone whose invite has been
-    outstanding 5+ days -- reuses the exact same send_invite() logic as a
-    single-person resend (fresh token, fresh invite_sent_at each time), just
-    applied to the whole outstanding batch in one click. A short cutoff
-    (5 days) keeps this from immediately re-nagging someone invited
-    yesterday the first time this button gets clicked."""
-    import secrets
-    from datetime import datetime, timedelta
-    from ..email import send_invite_email
-
+    outstanding 5+ days -- reuses the exact same per-person token logic as
+    a single-person resend (fresh token, fresh invite_sent_at each time),
+    just applied to the whole outstanding batch via the shared background
+    worker. A short cutoff (5 days) keeps this from immediately re-nagging
+    someone invited yesterday the first time this button gets clicked."""
     cutoff = datetime.utcnow() - timedelta(days=5)
     candidates = Person.query.filter(
         Person.invite_sent_at.isnot(None),
@@ -481,22 +557,17 @@ def resend_outstanding_invites():
         Person.invite_sent_at <= cutoff,
     ).all()
 
-    sent = failed = 0
-    for person in candidates:
-        token = secrets.token_urlsafe(32)
-        person.invite_token = token
-        person.invite_sent_at = datetime.utcnow()
-        try:
-            send_invite_email(person, token)
-            sent += 1
-        except Exception:
-            failed += 1
-    db.session.commit()
+    if not candidates:
+        flash("No outstanding invites are old enough to resend yet.", "success")
+        return redirect(url_for("admin.dashboard"))
 
-    msg = f"Resent to {sent} outstanding invite(s)."
-    if failed:
-        msg += f" {failed} failed (check email settings)."
-    flash(msg, "success" if not failed else "warning")
+    person_ids = [p.id for p in candidates]
+    app = current_app._get_current_object()
+    thread = threading.Thread(target=_send_invite_batch, args=(app, person_ids), daemon=True)
+    thread.start()
+
+    flash(f"Resending invitations to {len(person_ids)} outstanding member(s) "
+          f"in the background -- refresh in a bit to see updated status.", "success")
     return redirect(url_for("admin.dashboard"))
 
 

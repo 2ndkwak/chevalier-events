@@ -180,10 +180,17 @@ Confrerie des Chevaliers du Tastevin
         mail.send(msg)
 
 
-def send_invite_email(person, token):
-    """Send a portal invitation email with a set-password link."""
+def send_invite_email(person, token, connection=None):
+    """Send a portal invitation email with a set-password link.
+
+    `connection` is an optional flask_mail Connection (from mail.connect())
+    for reusing one SMTP connection across a whole batch instead of
+    opening a new one per recipient -- see the Aug 2026 background
+    bulk-invite / resend-outstanding-invites worker in routes/members.py,
+    which sends this exact way for the same reason the promotion-email
+    worker does: reconnecting per-recipient is what made the original
+    promotion blast slow enough to time out."""
     from flask import current_app, url_for, render_template
-    mail = current_app.extensions["mail"]
     from flask_mail import Message
 
     link = url_for("members.accept_invite", token=token, _external=True)
@@ -210,8 +217,11 @@ Confrerie des Chevaliers du Tastevin
                                  logo_url=logo_url)
 
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    if connection is not None:
+        connection.send(msg)
+    else:
+        mail = current_app.extensions["mail"]
+        mail.send(msg)
 
 
 def send_cancellation_email(person, event):
