@@ -489,8 +489,9 @@ def _send_invite_batch(app, person_ids):
         from ..email import send_invite_email
         sent, failed = 0, 0
         try:
-            mail = app.extensions["mail"]
-            with mail.connect() as connection:
+            from ..postmark import broadcast_connection
+            broadcast_headers = {"X-PM-Message-Stream": app.config["POSTMARK_BROADCAST_STREAM_ID"]}
+            with broadcast_connection(app) as connection:
                 for person_id in person_ids:
                     person = Person.query.get(person_id)
                     if not person or not person.email or person.can_login:
@@ -500,7 +501,8 @@ def _send_invite_batch(app, person_ids):
                     person.invite_sent_at = utcnow()
                     db.session.commit()
                     try:
-                        send_invite_email(person, token, connection=connection)
+                        send_invite_email(person, token, connection=connection,
+                                           extra_headers=broadcast_headers)
                         sent += 1
                     except Exception:
                         failed += 1

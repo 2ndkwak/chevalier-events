@@ -521,13 +521,15 @@ def _send_promotion_batch(app, event_id):
                   f"{sum(1 for p in recipients if p.id not in already_sent_ids)} to send now",
                   flush=True)
 
-            mail = app.extensions["mail"]
-            with mail.connect() as connection:
+            from ..postmark import broadcast_connection
+            broadcast_headers = {"X-PM-Message-Stream": app.config["POSTMARK_BROADCAST_STREAM_ID"]}
+            with broadcast_connection(app) as connection:
                 for person in recipients:
                     if person.id in already_sent_ids:
                         continue
                     try:
-                        send_event_promotion(event, person, connection=connection)
+                        send_event_promotion(event, person, connection=connection,
+                                              extra_headers=broadcast_headers)
                         db.session.add(EventPromotionSend(event_id=event.id, person_id=person.id,
                                                            sent_at=utcnow()))
                         db.session.commit()

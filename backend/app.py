@@ -57,6 +57,26 @@ def create_app(config=None):
         MAIL_PASSWORD=None,
         MAIL_DEFAULT_SENDER=None,
         ADMIN_EMAIL=None,           # where RSVP notifications go
+
+        # Broadcast Message Stream sends (the real promotion blast, and
+        # the bulk-invite/resend-outstanding-invites worker) need to
+        # connect to a different SMTP host than everything else -- see
+        # backend/postmark.py. This hostname is universal Postmark
+        # infrastructure, not org-specific, so unlike MAIL_SERVER etc.
+        # it doesn't need to live in instance/config.py.
+        POSTMARK_BROADCAST_SMTP_SERVER="smtp-broadcasts.postmarkapp.com",
+        # The X-PM-Message-Stream value that actually routes a message to
+        # the account's Broadcast stream. "broadcast" (singular) is the
+        # ID Postmark auto-assigns to every account's default Broadcast
+        # stream -- confirmed directly on the stream's own settings page,
+        # NOT "broadcasts" (plural), which is what generic example text
+        # in Postmark's own docs uses and is easy to copy verbatim by
+        # mistake (exactly what happened here the first time: the header
+        # silently didn't match any real stream, so Postmark accepted the
+        # SMTP transaction with no error but then dropped the message
+        # entirely -- no bounce, no delivery, no trace in either stream's
+        # activity log).
+        POSTMARK_BROADCAST_STREAM_ID="broadcast",
         ANTHROPIC_API_KEY=None,     # required for AI seating proposals
     )
 
