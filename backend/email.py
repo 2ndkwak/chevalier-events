@@ -93,6 +93,25 @@ def html_to_plain_text(html_str):
     return text.strip()
 
 
+def _send(msg, sender_key, connection=None):
+    """Shared dispatch for every send_* function below: attaches the
+    right sender address and reply-to (Aug 2026 Postmark migration --
+    see instance/config.py's MAIL_SENDER_EVENTS/MAIL_SENDER_ADMIN/
+    MAIL_REPLY_TO, kept as config rather than hardcoded here so each
+    Sous Commanderie running their own instance sets their own without
+    touching code), then sends via the given connection if one was
+    provided (a Broadcast-stream connection, for the two batch workers
+    that need one) or the app's default (Transactional) mail extension
+    otherwise."""
+    msg.sender = current_app.config[sender_key]
+    msg.reply_to = current_app.config.get("MAIL_REPLY_TO")
+    if connection is not None:
+        connection.send(msg)
+    else:
+        mail = current_app.extensions["mail"]
+        mail.send(msg)
+
+
 def send_admin_rsvp_notification(event, person, action):
     """Notify the admin when a member RSVPs, cancels, or changes guests."""
     admin_email = current_app.config.get("ADMIN_EMAIL")
@@ -116,11 +135,10 @@ Waitlist: {sum(1 for r in event.rsvps if r.status == 'waitlist')}
 """.strip()
 
     msg = Message(subject=subject, recipients=[admin_email], body=body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
 
 
-def send_event_promotion(event, person, connection=None):
+def send_event_promotion(event, person, connection=None, extra_headers=None):
     """Send an event announcement email to a single member or partner.
     Sends both an HTML version (so a PayPal/payment link or any other
     link, bold/italic, or list entered in the event's description editor
@@ -129,12 +147,15 @@ def send_event_promotion(event, person, connection=None):
     HTML mail, with links rendered as 'text (url)' so the URL itself is
     still visible and usable there too.
 
-    `connection` is an optional flask_mail Connection (from mail.connect())
-    for reusing one SMTP connection across a whole batch instead of
-    opening a new one per recipient -- see the Aug 2026 background
-    promotion-send worker in routes/events.py, which is where this
-    matters: reconnecting per-email was the main reason the original
-    blast took long enough to time out in the first place."""
+    `connection` is an optional flask_mail Connection (from mail.connect()
+    or backend/postmark.py's broadcast_connection()) for reusing one SMTP
+    connection across a whole batch instead of opening a new one per
+    recipient -- see the Aug 2026 background promotion-send worker in
+    routes/events.py, which is where this matters: reconnecting per-email
+    was the main reason the original blast took long enough to time out
+    in the first place. `extra_headers` lets that same worker attach the
+    X-PM-Message-Stream header Postmark needs to route a batch send
+    through the Broadcast stream rather than Transactional."""
     if not person.email:
         return
 
@@ -172,26 +193,25 @@ Confrerie des Chevaliers du Tastevin
                                  event_url=event_url,
                                  logo_url=logo_url)
 
-    msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
-    if connection is not None:
-        connection.send(msg)
-    else:
-        mail = current_app.extensions["mail"]
-        mail.send(msg)
+    msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body,
+                  extra_headers=extra_headers)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS", connection=connection)
 
 
-def send_invite_email(person, token, connection=None):
+def send_invite_email(person, token, connection=None, extra_headers=None):
     """Send a portal invitation email with a set-password link.
 
-    `connection` is an optional flask_mail Connection (from mail.connect())
-    for reusing one SMTP connection across a whole batch instead of
-    opening a new one per recipient -- see the Aug 2026 background
-    bulk-invite / resend-outstanding-invites worker in routes/members.py,
-    which sends this exact way for the same reason the promotion-email
-    worker does: reconnecting per-recipient is what made the original
-    promotion blast slow enough to time out."""
-    from flask import current_app, url_for, render_template
-    from flask_mail import Message
+    `connection` is an optional flask_mail Connection (from mail.connect()
+    or backend/postmark.py's broadcast_connection()) for reusing one SMTP
+    connection across a whole batch instead of opening a new one per
+    recipient -- see the Aug 2026 background bulk-invite / resend-
+    outstanding-invites worker in routes/members.py, which sends this
+    exact way for the same reason the promotion-email worker does:
+    reconnecting per-recipient is what made the original promotion blast
+    slow enough to time out. `extra_headers` lets that same worker attach
+    the X-PM-Message-Stream header Postmark needs to route a batch send
+    through the Broadcast stream rather than Transactional."""
+    from flask import url_for, render_template
 
     link = url_for("members.accept_invite", token=token, _external=True)
     logo_url = url_for("static", filename="img/Chevalier_Logo.jpg", _external=True)
@@ -216,12 +236,9 @@ Confrerie des Chevaliers du Tastevin
                                  link=link,
                                  logo_url=logo_url)
 
-    msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
-    if connection is not None:
-        connection.send(msg)
-    else:
-        mail = current_app.extensions["mail"]
-        mail.send(msg)
+    msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body,
+                  extra_headers=extra_headers)
+    _send(msg, sender_key="MAIL_SENDER_ADMIN", connection=connection)
 
 
 def send_cancellation_email(person, event):
@@ -241,8 +258,7 @@ Confrerie des Chevaliers du Tastevin
 """.strip()
 
     msg = Message(subject=subject, recipients=[person.email], body=body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
 
 
 def send_waitlist_promotion_email(person, event, rsvp):
@@ -284,8 +300,7 @@ Confrerie des Chevaliers du Tastevin
                                  logo_url=logo_url)
 
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
 
 
 def send_promotion_expired_email(person, event):
@@ -306,8 +321,7 @@ Confrerie des Chevaliers du Tastevin
 """.strip()
 
     msg = Message(subject=subject, recipients=[person.email], body=body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
 
 
 def send_admin_promotion_resolved_notification(event, cancelled_by, promoted_person):
@@ -337,8 +351,7 @@ Waitlist: {sum(1 for r in event.rsvps if r.status == 'waitlist')}
 """.strip()
 
     msg = Message(subject=subject, recipients=[admin_email], body=body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
 
 
 def send_password_reset_email(person, token):
@@ -369,5 +382,4 @@ Confrerie des Chevaliers du Tastevin
                                  logo_url=logo_url)
 
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body)
-    mail = current_app.extensions["mail"]
-    mail.send(msg)
+    _send(msg, sender_key="MAIL_SENDER_ADMIN")
