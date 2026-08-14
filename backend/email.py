@@ -193,8 +193,23 @@ Confrerie des Chevaliers du Tastevin
                                  event_url=event_url,
                                  logo_url=logo_url)
 
+    # Metadata Postmark echoes back on every webhook event for this
+    # message (bounce, open, etc.), used to identify exactly which
+    # (event, person) an incoming webhook is about -- see
+    # routes/webhooks.py. Built here, not by each caller, so every path
+    # that sends a promotion (single test-copy or the real batch) always
+    # carries it; a caller's own extra_headers (e.g. the batch worker's
+    # X-PM-Message-Stream) are layered on top, not replaced.
+    headers = {
+        "X-PM-Metadata-kind": "promotion",
+        "X-PM-Metadata-person-id": str(person.id),
+        "X-PM-Metadata-event-id": str(event.id),
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body,
-                  extra_headers=extra_headers)
+                  extra_headers=headers)
     _send(msg, sender_key="MAIL_SENDER_EVENTS", connection=connection)
 
 
@@ -236,8 +251,21 @@ Confrerie des Chevaliers du Tastevin
                                  link=link,
                                  logo_url=logo_url)
 
+    # Metadata Postmark echoes back on every webhook event for this
+    # message -- used to identify which person an incoming open webhook
+    # is about (see routes/webhooks.py). Built here, not by each caller,
+    # so every invite path (single send, bulk invite, resend) always
+    # carries it; a caller's own extra_headers (e.g. the batch worker's
+    # X-PM-Message-Stream) are layered on top, not replaced.
+    headers = {
+        "X-PM-Metadata-kind": "invite",
+        "X-PM-Metadata-person-id": str(person.id),
+    }
+    if extra_headers:
+        headers.update(extra_headers)
+
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body,
-                  extra_headers=extra_headers)
+                  extra_headers=headers)
     _send(msg, sender_key="MAIL_SENDER_ADMIN", connection=connection)
 
 

@@ -157,7 +157,7 @@ def rsvp_list(event_id):
     waitlist.sort(key=key_func)
     declined.sort(key=key_func)
 
-    from ..models import Person as _P
+    from ..models import Person as _P, EventPromotionSend
     existing_person_ids = [r.person_id for r in event.rsvps]
     all_persons = (_P.query
                    .filter(_P.person_type.in_(["member", "honoraire", "aspirant"]))
@@ -170,6 +170,20 @@ def rsvp_list(event_id):
         (p.first_name or "").lower(),
     ))
     total_collected = sum(float(r.amount_paid) for r in confirmed if r.amount_paid)
+
+    # Aug 2026 delivery-visibility: everyone the promotion was sent to who
+    # still has no RSVP at all (any status). Deliberately excludes anyone
+    # in existing_person_ids -- those already have their own row above
+    # (confirmed/waitlist/declined/etc), so surfacing them again here
+    # would be redundant. Hidden behind a toggle in the template (see
+    # rsvps.html) rather than always shown, since a GS mostly just wants
+    # to see who's coming, not delivery mechanics.
+    promo_sent_rows = EventPromotionSend.query.filter_by(event_id=event.id).all()
+    promo_no_response = [row for row in promo_sent_rows if row.person_id not in existing_person_ids]
+    promo_no_response.sort(key=lambda row: (
+        (row.person.last_name or "").lower(), (row.person.first_name or "").lower()
+    ))
+
     return render_template("admin/events/rsvps.html",
                            event=event,
                            confirmed=confirmed,
@@ -178,6 +192,7 @@ def rsvp_list(event_id):
                            declined=declined,
                            all_persons=all_persons,
                            total_collected=total_collected,
+                           promo_no_response=promo_no_response,
                            sort=sort)
 
 

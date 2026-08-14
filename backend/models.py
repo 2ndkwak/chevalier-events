@@ -63,6 +63,17 @@ class Person(UserMixin, db.Model):
     is_admin       = db.Column(db.Boolean, default=False, nullable=False)
     invite_token   = db.Column(db.String(64), nullable=True, unique=True)
     invite_sent_at = db.Column(db.DateTime, nullable=True)
+    # Aug 2026 Postmark delivery-visibility Phase 3. invite_opened_at is
+    # set on the FIRST open of an invite email (not overwritten on
+    # subsequent opens -- "when did they first see it" is the useful
+    # question). email_bounced_at/type, by contrast, reflect the address's
+    # CURRENT status and are overwritten on every new bounce (a repeat
+    # bounce is a more current signal than the first one) -- cleared
+    # automatically when the address is edited (see routes/members.py),
+    # since a corrected address deserves a fresh start.
+    invite_opened_at   = db.Column(db.DateTime, nullable=True)
+    email_bounced_at   = db.Column(db.DateTime, nullable=True)
+    email_bounce_type  = db.Column(db.String(40), nullable=True)  # e.g. "HardBounce", "SoftBounce"
     reset_token            = db.Column(db.String(64), nullable=True, unique=True)
     reset_token_expires_at = db.Column(db.DateTime, nullable=True)
     last_login     = db.Column(db.DateTime)
@@ -798,6 +809,11 @@ class EventPromotionSend(db.Model):
     id        = db.Column(db.Integer, primary_key=True)
     event_id  = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
     person_id = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=False)
+    # Set on the FIRST open of this specific person's copy of this
+    # specific event's promotion (Aug 2026 Phase 3) -- not overwritten
+    # on repeat opens, matching Person.invite_opened_at's same
+    # first-open-wins logic.
+    opened_at = db.Column(db.DateTime, nullable=True)
     sent_at   = db.Column(db.DateTime, nullable=False)
 
     event     = db.relationship("Event", back_populates="promotion_sends")

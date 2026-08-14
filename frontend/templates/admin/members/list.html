@@ -1,6 +1,21 @@
 {% extends "base.html" %}
 {% block title %}Members — Chevalier Events{% endblock %}
 
+{% macro login_status_badge(person, small=False) %}
+{% set sz = 'style="font-size:.65rem;"' if small else '' %}
+{% if person.can_login %}
+  <span class="badge badge-success" {{ sz|safe }}>Active</span>
+{% elif person.email_bounced_at %}
+  <span class="badge badge-danger" {{ sz|safe }} title="{{ person.email_bounce_type or 'Bounced' }}">No login &middot; Bounced</span>
+{% elif person.invite_opened_at %}
+  <span class="badge badge-success" {{ sz|safe }}>No login &middot; Opened</span>
+{% elif person.invite_sent_at %}
+  <span class="badge badge-muted" {{ sz|safe }}>No login &middot; Sent, not opened</span>
+{% else %}
+  <span class="badge badge-muted" {{ sz|safe }}>No login</span>
+{% endif %}
+{% endmacro %}
+
 {% block content %}
 <div class="page-header">
   <h1>Members &amp; Partners</h1>
@@ -80,9 +95,7 @@
               <td class="text-sm text-muted">{{ p.email or '--' }}</td>
               <td class="text-sm text-muted">{{ p.phone or '--' }}</td>
               <td>
-                {% if p.can_login %}
-                  <span class="badge badge-success">Active</span>
-                {% else %}<span class="badge badge-muted">No login</span>{% endif %}
+                {{ login_status_badge(p) }}
               </td>
               <td>
                 <a href="{{ url_for('members.edit_member', person_id=p.id) }}"
@@ -105,11 +118,7 @@
               <td class="text-sm text-muted">{{ p.partner.email or '--' }}</td>
               <td class="text-sm text-muted">{{ p.partner.phone or '--' }}</td>
               <td>
-                {% if p.partner.can_login %}
-                  <span class="badge badge-success" style="font-size:.65rem;">Active</span>
-                {% else %}
-                  <span class="badge badge-muted" style="font-size:.65rem;">No login</span>
-                {% endif %}
+                {{ login_status_badge(p.partner, small=True) }}
               </td>
               <td>
                 <a href="{{ url_for('members.edit_member', person_id=p.partner.id) }}"

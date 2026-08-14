@@ -49,6 +49,59 @@
 </div>
 {% endif %}
 
+{% if promo_no_response %}
+<div style="margin-bottom:1.5rem;">
+  <button type="button" class="btn btn-outline btn-sm" onclick="togglePromoResults()">
+    <span id="promo-toggle-label">Show promo email results ({{ promo_no_response|length }})</span>
+  </button>
+  <div id="promo-results" class="card" style="display:none; margin-top:.75rem; padding:1rem 1.5rem;">
+    <div style="font-size:.7rem; text-transform:uppercase; letter-spacing:.08em;
+                color:var(--ink-muted); font-family:sans-serif; margin-bottom:.75rem;">
+      Promotion sent, no RSVP yet
+    </div>
+    <table style="width:100%; font-size:.9rem;">
+      <thead>
+        <tr style="text-align:left; color:var(--ink-muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em;">
+          <th style="padding-bottom:.4rem;">Name</th>
+          <th style="padding-bottom:.4rem;">Sent</th>
+          <th style="padding-bottom:.4rem;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in promo_no_response %}
+        <tr style="border-top:1px solid var(--parchment-md);">
+          <td style="padding:.4rem 0;">{{ row.person.display_name }}</td>
+          <td style="padding:.4rem 0;" class="text-sm text-muted">
+            <span data-utc-time="{{ row.sent_at.isoformat() }}Z" data-utc-time-format="date">{{ row.sent_at.strftime('%b %d') }} UTC</span>
+          </td>
+          <td style="padding:.4rem 0;">
+            {% if row.person.email_bounced_at %}
+              <span class="badge badge-danger" title="{{ row.person.email_bounce_type or 'Bounced' }}">Bounced</span>
+            {% elif row.opened_at %}
+              <span class="badge badge-success">Opened <span data-utc-time="{{ row.opened_at.isoformat() }}Z" data-utc-time-format="date">{{ row.opened_at.strftime('%b %d') }} UTC</span></span>
+            {% else %}
+              <span class="badge badge-muted">Sent, not opened</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+  function togglePromoResults() {
+    var section = document.getElementById("promo-results");
+    var label = document.getElementById("promo-toggle-label");
+    var showing = section.style.display !== "none";
+    section.style.display = showing ? "none" : "block";
+    label.textContent = showing
+      ? "Show promo email results ({{ promo_no_response|length }})"
+      : "Hide promo email results";
+  }
+</script>
+{% endif %}
+
 <!-- Manual add — members only, partner opt-in -->
 <div class="card">
   <div class="card-title">Add RSVP manually

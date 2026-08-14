@@ -85,7 +85,14 @@ def add_member():
 def edit_member(person_id):
     person = Person.query.get_or_404(person_id)
     if request.method == "POST":
+        old_email = person.email
         _person_from_form(person, request.form)
+        if person.email != old_email and person.email_bounced_at:
+            # A corrected address deserves a fresh start rather than
+            # showing "bounced" forever because of the old, wrong one --
+            # see the Aug 2026 bounce-tracking work.
+            person.email_bounced_at  = None
+            person.email_bounce_type = None
         db.session.commit()
         flash(f"{person.display_name} updated.", "success")
         return redirect(url_for("members.edit_member", person_id=person.id))
