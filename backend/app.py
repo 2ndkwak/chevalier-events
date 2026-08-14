@@ -77,6 +77,16 @@ def create_app(config=None):
         # entirely -- no bounce, no delivery, no trace in either stream's
         # activity log).
         POSTMARK_BROADCAST_STREAM_ID="broadcast",
+
+        # HTTP Basic Auth credentials protecting the incoming Postmark
+        # webhook (routes/webhooks.py) from random internet traffic --
+        # Postmark supports embedding these directly in the webhook URL
+        # you configure in their dashboard (https://user:pass@host/...).
+        # Real values live in instance/config.py, same pattern as
+        # MAIL_USERNAME/PASSWORD -- these None defaults mean the webhook
+        # route refuses all requests until real credentials are set.
+        POSTMARK_WEBHOOK_USERNAME=None,
+        POSTMARK_WEBHOOK_PASSWORD=None,
         ANTHROPIC_API_KEY=None,     # required for AI seating proposals
     )
 
@@ -112,6 +122,7 @@ def create_app(config=None):
     from .routes.seating       import seating_bp
     from .routes.import_members import import_bp
     from .routes.portal        import portal_bp
+    from .routes.webhooks      import webhooks_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp,          url_prefix="/admin")
@@ -121,6 +132,7 @@ def create_app(config=None):
     app.register_blueprint(seating_bp,        url_prefix="/admin/seating")
     app.register_blueprint(import_bp,         url_prefix="/admin/import")
     app.register_blueprint(portal_bp,         url_prefix="/portal")
+    app.register_blueprint(webhooks_bp)
 
     # -- Bare-domain redirect -------------------------------------------
     @app.route("/")
@@ -156,6 +168,10 @@ def _auto_migrate():
         ("rsvps", "payment_note",     "VARCHAR(200)"),
         ("persons", "invite_token",    "VARCHAR(64)"),
         ("persons", "invite_sent_at",  "DATETIME"),
+        ("persons", "invite_opened_at",  "DATETIME"),
+        ("persons", "email_bounced_at",  "DATETIME"),
+        ("persons", "email_bounce_type", "VARCHAR(50)"),
+        ("event_promotion_sends", "opened_at", "DATETIME"),
         ("wine_tags", "course",        "INTEGER DEFAULT 1"),
         ("persons", "person_type_updated_at",  "DATETIME"),
         ("persons", "dietary_tags_updated_at", "DATETIME"),
