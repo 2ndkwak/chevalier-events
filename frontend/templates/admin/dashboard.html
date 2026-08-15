@@ -42,9 +42,15 @@
             {% endif %}
             {% if milestone_dots and milestone_dots.get(event.id) %}
             <div class="milestone-strip">
-              {% for dot in milestone_dots[event.id] %}
-              <span class="milestone-dot {{ dot.state }}"
-                    title="{{ dot.label }}{% if dot.stale_because %} — {{ dot.stale_because|join('/') }} changed{% endif %}"></span>
+              {% for dot_group in [milestone_dots[event.id][:8], milestone_dots[event.id][8:]] %}
+              <div class="milestone-row">
+                {% for dot in dot_group %}
+                <span class="milestone-dot-hit"
+                      title="{{ dot.label }}{% if dot.stale_because %} — {{ dot.stale_because|join('/') }} changed{% endif %}">
+                  <span class="milestone-dot {{ dot.state }}"></span>
+                </span>
+                {% endfor %}
+              </div>
               {% endfor %}
             </div>
             {% endif %}

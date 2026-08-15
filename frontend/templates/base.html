@@ -277,10 +277,21 @@
     .data-table .actions { display: flex; gap: .4rem; }
 
     /* ── Milestone dot-strip ─────────────────────────────────────────── */
-    .milestone-strip { display: flex; gap: .28rem; margin-top: .3rem; flex-wrap: wrap; }
+    /* Two logical rows (planning milestones / print milestones -- see the
+       templates that use this), each row its own flex line so dots always
+       wrap by row, never mid-row. */
+    .milestone-strip { display: flex; flex-direction: column; gap: .3rem; margin-top: .35rem; }
+    .milestone-row { display: flex; gap: .5rem; flex-wrap: wrap; }
+    /* The hoverable/tappable target is deliberately larger than the visible
+       dot (1.25rem box around a .75rem dot) so the tooltip is easy to
+       trigger without needing pixel-precise aim -- the visible dot size and
+       the hit-target size are independent on purpose. */
+    .milestone-dot-hit {
+      width: 1.25rem; height: 1.25rem; display: inline-flex;
+      align-items: center; justify-content: center; cursor: default;
+    }
     .milestone-dot {
-      width: .55rem; height: .55rem; border-radius: 50%; display: inline-block;
-      cursor: default;
+      width: .75rem; height: .75rem; border-radius: 50%; display: inline-block;
     }
     .milestone-dot.done     { background: var(--success); }
     .milestone-dot.stale    { background: var(--danger); }
