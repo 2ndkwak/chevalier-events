@@ -26,6 +26,7 @@
           {% endif %}
         </div>
       </div>
+      {% set rsvp_closed = event.rsvp_deadline and event.rsvp_deadline < now %}
       {% if my_rsvp %}
         <span class="badge {% if my_rsvp.status=='confirmed' %}badge-success
                            {% elif my_rsvp.status=='waitlist' %}badge-gold
@@ -35,6 +36,8 @@
           {% elif my_rsvp.status == 'waitlist' %}On waitlist
           {% else %}Not attending{% endif %}
         </span>
+      {% elif rsvp_closed %}
+        <span class="badge badge-muted" style="white-space:nowrap; margin-top:.2rem;">Reservations closed</span>
       {% elif event.is_full %}
         <span class="badge badge-muted" style="white-space:nowrap; margin-top:.2rem;">Waitlist available</span>
       {% else %}

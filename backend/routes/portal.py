@@ -21,7 +21,8 @@ def home():
               .all())
     my_rsvps = {r.event_id: r for r in
                 RSVP.query.filter_by(person_id=current_user.id).all()}
-    return render_template("portal/home.html", events=events, my_rsvps=my_rsvps)
+    return render_template("portal/home.html", events=events, my_rsvps=my_rsvps,
+                           now=_dt.utcnow())
 
 @portal_bp.route("/event/<int:event_id>")
 @login_required
