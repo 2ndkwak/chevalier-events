@@ -1,7 +1,7 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, jsonify, current_app)
 from flask_login import login_required
-from ..models import db, Person, DietaryTag, RSVP
+from ..models import db, Person, DietaryTag, RSVP, EventPromotionSend
 from ..routes.admin import admin_required
 from werkzeug.security import generate_password_hash
 from datetime import datetime, timedelta
@@ -124,6 +124,10 @@ def delete_member(person_id):
     # Break partner link first
     if person.partner:
         person.partner.partner_id = None
+    # Clean up promotion-send history so no orphaned EventPromotionSend
+    # row is left behind pointing at a person_id that no longer exists
+    # (that used to crash the RSVP list page's sort -- fixed Aug 2026).
+    EventPromotionSend.query.filter_by(person_id=person_id).delete()
     name = person.display_name
     db.session.delete(person)
     db.session.commit()

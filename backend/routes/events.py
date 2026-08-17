@@ -179,7 +179,11 @@ def rsvp_list(event_id):
     # rsvps.html) rather than always shown, since a GS mostly just wants
     # to see who's coming, not delivery mechanics.
     promo_sent_rows = EventPromotionSend.query.filter_by(event_id=event.id).all()
-    promo_no_response = [row for row in promo_sent_rows if row.person_id not in existing_person_ids]
+    # row.person can be None if that person was later deleted (their
+    # EventPromotionSend history isn't cleaned up automatically pre-Aug
+    # 2026-fix) -- skip those rather than crashing on the sort below.
+    promo_no_response = [row for row in promo_sent_rows
+                          if row.person_id not in existing_person_ids and row.person is not None]
     promo_no_response.sort(key=lambda row: (
         (row.person.last_name or "").lower(), (row.person.first_name or "").lower()
     ))
