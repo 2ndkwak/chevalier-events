@@ -200,6 +200,52 @@ def rsvp_list(event_id):
                            sort=sort)
 
 
+# --- EXPORT RSVPS AS CSV -------------------------------------------------------
+
+@events_bp.route("/<int:event_id>/rsvps/export.csv")
+@login_required
+@admin_required
+def export_rsvps_csv(event_id):
+    """Download the full RSVP list for an event as CSV -- opens directly
+    in Excel, no separate xlsx dependency needed. Added Aug 2026 for the
+    Argentier (treasurer) to pull payment records for reconciliation,
+    especially for archived events whose RSVPs can no longer be edited
+    in-app. Available for any event, not just archived ones -- no reason
+    to restrict it. Includes every RSVP regardless of status (confirmed,
+    waitlist, declined, promoted, expired), since the treasurer may want
+    the full picture, not just who ultimately attended."""
+    import csv, io
+    from flask import Response
+
+    event = Event.query.get_or_404(event_id)
+    rows = sorted(event.rsvps, key=_rsvp_sort_key("last_name"))
+
+    columns = ["Name", "Status", "Guests", "Guest Names", "Payment Status",
+               "Amount Paid", "Payment Note", "RSVP Date"]
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=columns)
+    writer.writeheader()
+    for r in rows:
+        writer.writerow({
+            "Name": r.person.display_name if r.person else "(deleted person)",
+            "Status": r.status,
+            "Guests": len(r.guests),
+            "Guest Names": "; ".join(g.display_name for g in r.guests),
+            "Payment Status": r.payment_status or "unpaid",
+            "Amount Paid": f"{r.amount_paid:.2f}" if r.amount_paid else "",
+            "Payment Note": r.payment_note or "",
+            "RSVP Date": r.created_at.strftime("%Y-%m-%d") if r.created_at else "",
+        })
+
+    safe_title = "".join(c if c.isalnum() or c in " -_" else "" for c in event.title).strip() or "event"
+    filename = f"RSVPs - {safe_title}.csv"
+    return Response(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
 # --- ADMIN: MANUALLY ADD RSVP ------------------------------------------------
 
 @events_bp.route("/<int:event_id>/rsvps/add", methods=["POST"])
