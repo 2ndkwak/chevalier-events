@@ -45,7 +45,7 @@
         {% else %}
           <form method="POST" action="{{ url_for('events.send_promotion', event_id=event.id) }}" style="display:inline;">
             <button class="btn btn-gold btn-sm"
-                    onclick="return confirm('Send promotion email to everyone who hasn\'t received it yet?')">
+                    onclick="return confirm('Send promotion email to everyone eligible who hasn\'t RSVP\'d yet? (This can be used again later as a reminder.)')">
               [Email] Send promotion email
             </button>
           </form>
@@ -56,7 +56,7 @@
             <span class="text-muted">Sending... (started {{ event.promotion_send_started_at.strftime('%I:%M %p') }})</span>
           {% elif event.promoted %}
             <span style="color:var(--success);" aria-hidden="true">&#10003;</span>
-            <span class="text-muted">Sent {{ event.promotion_sent_at.strftime('%b %d') }}</span>
+            <span class="text-muted">Last sent {{ event.promotion_sent_at.strftime('%b %d') }}</span>
           {% else %}
             <span style="color:var(--ink-muted);" aria-hidden="true">&#9675;</span>
             <span class="text-muted">Not yet sent</span>

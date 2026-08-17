@@ -516,12 +516,15 @@ def _send_promotion_batch(app, event_id):
     rather than reconnecting per recipient, which was the main reason
     the original blast was slow enough to time out in the first place.
 
-    Every individual success is logged and committed immediately (same
-    resumable, skip-if-already-logged design as the route itself used
-    before this became a background job), so a batch that's interrupted
-    partway through -- this thread dying with its worker process, for
-    instance -- leaves accurate partial progress rather than an
-    all-or-nothing gap."""
+    Every individual success is logged (upserted into EventPromotionSend)
+    and committed immediately, so a batch that's interrupted partway
+    through -- this thread dying with its worker process, for instance --
+    leaves accurate partial progress rather than an all-or-nothing gap.
+    Note (Aug 2026): recipients are now everyone eligible who hasn't
+    RSVP'd yet, not "everyone who hasn't already received a promotion" --
+    this function is also used for reminder sends, so a person can
+    legitimately be sent to, and logged, more than once across separate
+    runs of this function for the same event."""
     base_url = app.config.get("SITE_BASE_URL", "http://localhost:5000")
     with app.app_context(), app.test_request_context(base_url=base_url):
         from ..email import send_event_promotion
@@ -529,29 +532,52 @@ def _send_promotion_batch(app, event_id):
             event = Event.query.get(event_id)
             if not event:
                 return
-            recipients = Person.query.filter(
+            # Aug 2026 "reminder sends" change: this is no longer a one-shot
+            # blast that skips anyone already logged. It now targets anyone
+            # eligible who still hasn't RSVP'd, so the same event can be
+            # re-promoted weeks/months later as a reminder and still reach
+            # people who got the very first send. "promoted" (a waitlist
+            # offer currently awaiting their decision) is excluded --
+            # they're mid-response. "expired" (a promoted offer they missed
+            # the window on) is NOT excluded -- that person effectively
+            # never responded, so they're still fair game. Per Trey: the
+            # only guard against an accidental instant re-send is the
+            # 15-minute in-progress lock above; a deliberate reminder days
+            # or months later is the whole point, not something to block.
+            responded_ids = {r.person_id for r in event.rsvps
+                              if r.status in ("confirmed", "waitlist", "declined")}
+            recipients = [p for p in Person.query.filter(
                 Person.email.isnot(None),
                 Person.person_type.in_(PROMOTION_ELIGIBLE_TYPES),
-            ).all()
-            already_sent_ids = {row.person_id for row in EventPromotionSend.query
-                                 .filter_by(event_id=event.id).all()}
-            print(f"[promotion send] event {event_id}: {len(recipients)} eligible, "
-                  f"{len(already_sent_ids)} already logged, "
-                  f"{sum(1 for p in recipients if p.id not in already_sent_ids)} to send now",
+            ).all() if p.id not in responded_ids]
+            # EventPromotionSend is still "at most one row per (event,
+            # person)" -- opened_at open-tracking depends on that -- so a
+            # resend UPDATES the existing row's sent_at rather than adding
+            # a second row.
+            existing_rows = {row.person_id: row for row in EventPromotionSend.query
+                              .filter_by(event_id=event.id).all()}
+            print(f"[promotion send] event {event_id}: {len(recipients)} recipients "
+                  f"(eligible type, has email, no confirmed/waitlist/declined RSVP)",
                   flush=True)
 
             from ..postmark import broadcast_connection
             broadcast_headers = {"X-PM-Message-Stream": app.config["POSTMARK_BROADCAST_STREAM_ID"]}
+            sent_count = 0
             with broadcast_connection(app) as connection:
                 for person in recipients:
-                    if person.id in already_sent_ids:
-                        continue
                     try:
                         send_event_promotion(event, person, connection=connection,
                                               extra_headers=broadcast_headers)
-                        db.session.add(EventPromotionSend(event_id=event.id, person_id=person.id,
-                                                           sent_at=utcnow()))
+                        row = existing_rows.get(person.id)
+                        if row:
+                            row.sent_at = utcnow()
+                        else:
+                            row = EventPromotionSend(event_id=event.id, person_id=person.id,
+                                                      sent_at=utcnow())
+                            db.session.add(row)
+                            existing_rows[person.id] = row
                         db.session.commit()
+                        sent_count += 1
                     except Exception:
                         db.session.rollback()
                         # One bad address (typo, bounced domain, etc.)
@@ -566,10 +592,11 @@ def _send_promotion_batch(app, event_id):
                         traceback.print_exc()
                         continue
 
-            sent_ids_now = already_sent_ids | {row.person_id for row in EventPromotionSend.query
-                                                .filter_by(event_id=event.id).all()}
             event = Event.query.get(event_id)
-            if event and all(p.id in sent_ids_now for p in recipients):
+            # Only stamp the "Sent" date if something actually went out --
+            # a reminder run with zero recipients (everyone's already
+            # responded) shouldn't overwrite it with today's date.
+            if event and sent_count:
                 event.promotion_sent_at = utcnow()
         except Exception:
             print(f"[promotion send] event {event_id}: batch-level failure "
