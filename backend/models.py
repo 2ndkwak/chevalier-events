@@ -286,6 +286,18 @@ class Event(db.Model):
         return self.is_published and self.event_date.date() >= today
 
     @property
+    def is_archived(self):
+        """Same cutoff the admin events list uses for its 'Past' filter
+        (Event.event_date < now, see routes/events.py list_events) --
+        kept as one property so RSVP edit/remove locking (Aug 2026) and
+        the events list filter can never drift apart. Deliberately a
+        live comparison against the clock, not a stored flag: changing
+        event_date (e.g. bringing a test event back to "current", or
+        correcting a real one) un-archives it immediately with no
+        separate unlock step."""
+        return self.event_date < utcnow()
+
+    @property
     def confirmed_count(self):
         """Seats spoken for: confirmed attendees plus anyone currently
         holding a provisional waitlist-promotion offer (their seat is

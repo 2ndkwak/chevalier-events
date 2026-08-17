@@ -237,13 +237,17 @@
         <td class="text-sm text-muted"><span data-utc-time="{{ rsvp.created_at.isoformat() }}Z" data-utc-time-format="date">{{ rsvp.created_at.strftime("%b %d") }} UTC</span></td>
         <td>
           <div class="actions">
-            <a href="{{ url_for('events.edit_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
-               class="btn btn-outline btn-sm">Edit</a>
-            <form method="POST"
-                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
-                  onsubmit="return confirm('Remove {{ rsvp.person.display_name }}\'s RSVP?')">
-              <button class="btn btn-outline btn-sm">Remove</button>
-            </form>
+            {% if event.is_archived %}
+              <span class="text-sm text-muted">Archived -- locked</span>
+            {% else %}
+              <a href="{{ url_for('events.edit_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                 class="btn btn-outline btn-sm">Edit</a>
+              <form method="POST"
+                    action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                    onsubmit="return confirm('Remove {{ rsvp.person.display_name }}\'s RSVP?')">
+                <button class="btn btn-outline btn-sm">Remove</button>
+              </form>
+            {% endif %}
           </div>
         </td>
       </tr>
@@ -276,15 +280,19 @@
         </td>
         <td>
           <div class="actions">
-            <form method="POST"
-                  action="{{ url_for('events.promote_waitlist', event_id=event.id, rsvp_id=rsvp.id) }}">
-              <button class="btn btn-gold btn-sm">Force confirm</button>
-            </form>
-            <form method="POST"
-                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
-                  onsubmit="return confirm('Cancel this offer? The seat will not be automatically re-offered.')">
-              <button class="btn btn-outline btn-sm">Cancel offer</button>
-            </form>
+            {% if event.is_archived %}
+              <span class="text-sm text-muted">Archived -- locked</span>
+            {% else %}
+              <form method="POST"
+                    action="{{ url_for('events.promote_waitlist', event_id=event.id, rsvp_id=rsvp.id) }}">
+                <button class="btn btn-gold btn-sm">Force confirm</button>
+              </form>
+              <form method="POST"
+                    action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                    onsubmit="return confirm('Cancel this offer? The seat will not be automatically re-offered.')">
+                <button class="btn btn-outline btn-sm">Cancel offer</button>
+              </form>
+            {% endif %}
           </div>
         </td>
       </tr>
@@ -359,15 +367,19 @@
         <td class="text-sm text-muted"><span data-utc-time="{{ rsvp.created_at.isoformat() }}Z" data-utc-time-format="date">{{ rsvp.created_at.strftime("%b %d") }} UTC</span></td>
         <td>
           <div class="actions">
-            <form method="POST"
-                  action="{{ url_for('events.promote_waitlist', event_id=event.id, rsvp_id=rsvp.id) }}">
-              <button class="btn btn-gold btn-sm">Promote</button>
-            </form>
-            <form method="POST"
-                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
-                  onsubmit="return confirm('Remove from waitlist?')">
-              <button class="btn btn-outline btn-sm">Remove</button>
-            </form>
+            {% if event.is_archived %}
+              <span class="text-sm text-muted">Archived -- locked</span>
+            {% else %}
+              <form method="POST"
+                    action="{{ url_for('events.promote_waitlist', event_id=event.id, rsvp_id=rsvp.id) }}">
+                <button class="btn btn-gold btn-sm">Promote</button>
+              </form>
+              <form method="POST"
+                    action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}"
+                    onsubmit="return confirm('Remove from waitlist?')">
+                <button class="btn btn-outline btn-sm">Remove</button>
+              </form>
+            {% endif %}
           </div>
         </td>
       </tr>
@@ -389,10 +401,14 @@
         <td>{{ rsvp.person.display_name }}</td>
         <td class="text-sm text-muted"><span data-utc-time="{{ rsvp.updated_at.isoformat() }}Z" data-utc-time-format="date">{{ rsvp.updated_at.strftime("%b %d") }} UTC</span></td>
         <td>
-          <form method="POST"
-                action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}">
-            <button class="btn btn-outline btn-sm">Remove</button>
-          </form>
+          {% if event.is_archived %}
+            <span class="text-sm text-muted">Archived -- locked</span>
+          {% else %}
+            <form method="POST"
+                  action="{{ url_for('events.remove_rsvp', event_id=event.id, rsvp_id=rsvp.id) }}">
+              <button class="btn btn-outline btn-sm">Remove</button>
+            </form>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

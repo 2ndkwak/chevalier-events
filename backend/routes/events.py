@@ -300,6 +300,20 @@ def edit_rsvp(event_id, rsvp_id):
     event = Event.query.get_or_404(event_id)
     rsvp  = RSVP.query.get_or_404(rsvp_id)
 
+    # Aug 2026: once an event is archived (event_date has passed), its RSVP
+    # list becomes a historical record -- seating, allergy lists, and
+    # payment reconciliation for that specific event already depended on
+    # it. Blocked on both GET and POST so a direct URL visit can't reach
+    # the edit form at all, not just have its submit silently rejected.
+    # The escape hatch (rare, e.g. a phoned-in cancellation that missed
+    # the cutoff) is changing the event's date to un-archive it -- see
+    # Event.is_archived.
+    if event.is_archived:
+        flash("This event has passed and its RSVPs are locked. To make a "
+              "correction, change the event's date to bring it out of the "
+              "archive first.", "error")
+        return redirect(url_for("events.rsvp_list", event_id=event_id))
+
     if request.method == "POST":
         # Replace all guests
         for g in list(rsvp.guests):
@@ -342,6 +356,9 @@ def edit_rsvp(event_id, rsvp_id):
 @admin_required
 def promote_waitlist(event_id, rsvp_id):
     rsvp = RSVP.query.get_or_404(rsvp_id)
+    if rsvp.event.is_archived:
+        flash("This event has passed and its RSVPs are locked.", "error")
+        return redirect(url_for("events.rsvp_list", event_id=event_id))
     rsvp.status = "confirmed"
     names = [rsvp.person.display_name]
     if rsvp.linked_rsvp and rsvp.linked_rsvp.status in ("waitlist", "promoted"):
@@ -361,6 +378,9 @@ def promote_waitlist(event_id, rsvp_id):
 def remove_rsvp(event_id, rsvp_id):
     rsvp = RSVP.query.get_or_404(rsvp_id)
     event = rsvp.event
+    if event.is_archived:
+        flash("This event has passed and its RSVPs are locked.", "error")
+        return redirect(url_for("events.rsvp_list", event_id=event_id))
     name = rsvp.person.display_name
     freed_seat = rsvp.status in ("confirmed", "promoted")
     cancelled_by = rsvp.cancelled_by if rsvp.status == "promoted" else rsvp.person
