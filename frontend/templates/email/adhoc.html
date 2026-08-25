@@ -26,21 +26,36 @@
             </td>
           </tr>
 
-          <!-- Greeting / subject -->
+          <!-- Subject -- sits above the greeting as its own heading, with
+               a divider below it, so it reads as the email's title rather
+               than a bolded line buried inside the body. -->
           <tr>
-            <td style="padding:36px 40px 8px 40px;">
-              <p style="font-family:Georgia,serif; font-size:17px; color:#1E1208; line-height:1.6; margin:0 0 18px 0;">
-                {{ greeting }},
-              </p>
-              <h1 style="font-family:Georgia,serif; font-size:22px; color:#4A1020; line-height:1.3; margin:0 0 22px 0;">
+            <td align="center" style="padding:36px 40px 22px 40px;">
+              <h1 style="font-family:Georgia,serif; font-size:22px; color:#4A1020; line-height:1.3; margin:0;">
                 {{ subject }}
               </h1>
             </td>
           </tr>
 
+          <!-- Divider -->
+          <tr>
+            <td style="padding:0 40px;">
+              <hr style="border:none; border-top:1px solid #E0D5BC; margin:0;">
+            </td>
+          </tr>
+
+          <!-- Greeting -->
+          <tr>
+            <td style="padding:24px 40px 8px 40px;">
+              <p style="font-family:Georgia,serif; font-size:17px; color:#1E1208; line-height:1.6; margin:0;">
+                {{ greeting }},
+              </p>
+            </td>
+          </tr>
+
           <!-- Free-text body (from the compose screen's rich-text editor) -->
           <tr>
-            <td style="padding:0 40px 8px 40px; font-family:Georgia,serif; font-size:15px; color:#3D2B1A; line-height:1.7;">
+            <td style="padding:8px 40px 8px 40px; font-family:Georgia,serif; font-size:15px; color:#3D2B1A; line-height:1.7;">
               {{ body_html|safe }}
             </td>
           </tr>
