@@ -213,6 +213,69 @@ Confrerie des Chevaliers du Tastevin
     _send(msg, sender_key="MAIL_SENDER_EVENTS", connection=connection)
 
 
+def send_adhoc_email(subject, body_html, person, adhoc_email_id=None,
+                      connection=None, extra_headers=None):
+    """Send a free-text broadcast email (Aug 2026 "Send Email" feature)
+    to a single member/partner, using the same branded shell as the
+    event promotion email. `body_html` is Quill-produced HTML, same
+    trust boundary as Event.description -- rendered with |safe in
+    email/adhoc.html.
+
+    `adhoc_email_id` is omitted for a "send test copy to myself" send
+    (see routes/broadcast.py's send_test()) -- a test send is never
+    logged to AdHocEmailSend and carries no adhoc-email-id metadata,
+    matching send_promotion_test()'s choice not to touch any real
+    send-tracking state. When it IS provided, this also goes out over
+    whatever `connection` the caller passed (the Broadcast-stream
+    connection, for the real batch send in routes/broadcast.py) rather
+    than opening a new one per recipient -- same reasoning as
+    send_event_promotion() and send_invite_email() above.
+
+    `extra_headers` lets the batch worker attach the X-PM-Message-Stream
+    header Postmark needs to route a batch send through the Broadcast
+    stream rather than Transactional."""
+    if not person.email:
+        return
+
+    from flask import url_for, render_template
+    logo_url = url_for("static", filename="img/Chevalier_Logo.jpg", _external=True)
+
+    body = f"""{greeting(person)},
+
+{html_to_plain_text(body_html)}
+
+Tastevin en Main,
+Confrerie des Chevaliers du Tastevin
+""".strip()
+
+    html_body = render_template("email/adhoc.html",
+                                 person=person,
+                                 greeting=greeting(person),
+                                 subject=subject,
+                                 body_html=body_html,
+                                 logo_url=logo_url)
+
+    # Metadata Postmark echoes back on every webhook event for this
+    # message -- used to identify which (adhoc_email, person) an
+    # incoming open webhook is about (see routes/webhooks.py). A test
+    # send (adhoc_email_id is None) simply omits the adhoc-email-id key,
+    # so an open on a test copy has nothing to match against and is
+    # silently ignored by the webhook handler, same as any stray/
+    # unrecognized metadata.
+    headers = {
+        "X-PM-Metadata-kind": "adhoc",
+        "X-PM-Metadata-person-id": str(person.id),
+    }
+    if adhoc_email_id is not None:
+        headers["X-PM-Metadata-adhoc-email-id"] = str(adhoc_email_id)
+    if extra_headers:
+        headers.update(extra_headers)
+
+    msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body,
+                  extra_headers=headers)
+    _send(msg, sender_key="MAIL_SENDER_ADMIN", connection=connection)
+
+
 def send_invite_email(person, token, connection=None, extra_headers=None):
     """Send a portal invitation email with a set-password link.
 

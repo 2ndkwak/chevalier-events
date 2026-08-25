@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}Send Email — Chevalier Events{% endblock %}
+
+{% block head %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.snow.min.css" rel="stylesheet">
+<style>
+  .ql-toolbar { border-color: var(--parchment-md) !important; border-radius: var(--radius) var(--radius) 0 0; }
+  .ql-container { border-color: var(--parchment-md) !important; border-radius: 0 0 var(--radius) var(--radius); font-size:.95rem; }
+  .ql-editor { min-height: 160px; }
+  .ql-editor p { margin-bottom: .4rem; }
+
+  .group-tile {
+    border: 1px solid var(--parchment-md); border-radius: var(--radius);
+    padding: .7rem 1rem; display: flex; align-items: center; gap: .6rem;
+    cursor: pointer; background: #fff;
+  }
+  .group-tile:hover { border-color: var(--gold); }
+  .group-tile input[type="checkbox"] { width: 1.1rem; height: 1.1rem; accent-color: var(--burgundy); }
+
+  #search-results {
+    border: 1px solid var(--parchment-md); border-radius: var(--radius);
+    max-height: 220px; overflow-y: auto; background: #fff; display: none;
+  }
+  #search-results .result-row {
+    padding: .5rem .8rem; cursor: pointer; font-size: .88rem;
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--parchment);
+  }
+  #search-results .result-row:last-child { border-bottom: none; }
+  #search-results .result-row:hover { background: var(--gold-pale); }
+  #search-results .result-row.already-added { opacity: .5; cursor: default; }
+
+  #roster-list { max-height: 320px; overflow-y: auto; }
+  .roster-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .45rem 0; border-bottom: 1px solid var(--parchment);
+    font-size: .88rem;
+  }
+  .roster-row:last-child { border-bottom: none; }
+  .roster-remove {
+    color: var(--danger); cursor: pointer; font-size: .8rem;
+    background: none; border: none; padding: 0 .3rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Send Email</h1>
+  <div style="display:flex; gap:.5rem;">
+    <a href="{{ url_for('broadcast.history') }}" class="btn btn-outline">Email History</a>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline">← Back to Dashboard</a>
+  </div>
+</div>
+
+<p class="text-muted text-sm" style="margin-bottom:1.5rem;">
+  Sends a free-text email, in the Commanderie's usual branded format, to whichever members and
+  partners you select below. Not tied to any event.
+</p>
+
+<form method="POST" id="broadcast-form" action="{{ url_for('broadcast.send') }}">
+
+  <!-- Recipients -->
+  <div class="card">
+    <div class="card-title">Recipients</div>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:.75rem; margin-bottom:1.25rem;">
+      {% for g in group_counts %}
+      <label class="group-tile">
+        <input type="checkbox" class="group-checkbox" data-group="{{ g.key }}">
+        <span>{{ g.label }} <span class="text-muted">({{ g.count }})</span></span>
+      </label>
+      {% endfor %}
+    </div>
+
+    <div class="form-group full" style="margin-bottom:1rem; position:relative;">
+      <label for="person-search">Add someone individually</label>
+      <input type="text" id="person-search" placeholder="Type a name..." autocomplete="off">
+      <div id="search-results"></div>
+    </div>
+
+    <hr class="divider">
+
+    <div style="display:flex; justify-content:space-between; align-items:center; margin:.75rem 0 .5rem 0;">
+      <span style="font-size:.85rem;">
+        <strong id="recipient-count">0</strong> recipient(s) selected
+      </span>
+      <button type="button" class="btn btn-outline btn-sm" id="clear-roster-btn">Clear all</button>
+    </div>
+    <div id="roster-empty" class="text-muted text-sm">No recipients selected yet.</div>
+    <div id="roster-list"></div>
+  </div>
+
+  <!-- Compose -->
+  <div class="card">
+    <div class="card-title">Compose</div>
+    <div class="form-group full" style="margin-bottom:1rem;">
+      <label for="subject">Subject *</label>
+      <input type="text" id="subject" name="subject" required
+             placeholder="e.g. A note from the Grand Senechal">
+    </div>
+    <div class="form-group full">
+      <label for="body">Message</label>
+      <div id="quill-editor"
+           style="background:#fff; border:1px solid var(--parchment-md);
+                  border-radius:var(--radius); min-height:160px; font-size:.95rem;">
+      </div>
+      <input type="hidden" id="body" name="body">
+    </div>
+  </div>
+
+  <div class="flex gap-1" style="margin-top:1rem;">
+    <button type="submit" class="btn btn-primary" id="send-btn">
+      [Email] Send
+    </button>
+    <button type="button" class="btn btn-outline" id="send-test-btn">
+      Send test copy to myself
+    </button>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline">Cancel</a>
+  </div>
+</form>
+
+<!-- Separate form for test sends, so it can post without the recipient
+     roster and without triggering the real-send confirm dialog. -->
+<form method="POST" id="test-form" action="{{ url_for('broadcast.send_test') }}" style="display:none;">
+  <input type="hidden" name="subject" id="test-subject">
+  <input type="hidden" name="body" id="test-body">
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/quill/1.3.7/quill.min.js"></script>
+<script>
+  var ROSTER = {{ roster|tojson }};
+  var GROUPS = {{ group_counts|tojson }};
+  var byId = {};
+  ROSTER.forEach(function(p) { byId[p.id] = p; });
+
+  var selected = new Set();
+
+  function renderRoster() {
+    var list = document.getElementById("roster-list");
+    var empty = document.getElementById("roster-empty");
+    var count = document.getElementById("recipient-count");
+    count.textContent = selected.size;
+    empty.style.display = selected.size === 0 ? "block" : "none";
+
+    var ids = Array.from(selected).sort(function(a, b) {
+      return byId[a].name.localeCompare(byId[b].name);
+    });
+    list.innerHTML = "";
+    ids.forEach(function(id) {
+      var p = byId[id];
+      var row = document.createElement("div");
+      row.className = "roster-row";
+      row.innerHTML = "<span>" + p.name + " <span class=\"text-muted\">(" + p.email + ")</span></span>" +
+        "<button type=\"button\" class=\"roster-remove\" data-id=\"" + id + "\">Remove</button>" +
+        "<input type=\"hidden\" name=\"person_ids\" value=\"" + id + "\">";
+      list.appendChild(row);
+    });
+    list.querySelectorAll(".roster-remove").forEach(function(btn) {
+      btn.addEventListener("click", function() {
+        var id = parseInt(btn.getAttribute("data-id"), 10);
+        selected.delete(id);
+        syncGroupCheckboxes();
+        renderRoster();
+      });
+    });
+  }
+
+  // A group checkbox reflects whether EVERY person in that group is
+  // currently selected -- it can end up unchecked again after someone
+  // removes one member of an otherwise-fully-selected group directly
+  // from the roster list, which is deliberate: the checkbox always
+  // tells the truth about the group's current state rather than just
+  // remembering "was clicked."
+  function syncGroupCheckboxes() {
+    document.querySelectorAll(".group-checkbox").forEach(function(cb) {
+      var group = cb.getAttribute("data-group");
+      var members = ROSTER.filter(function(p) { return p.group === group; });
+      cb.checked = members.length > 0 && members.every(function(p) { return selected.has(p.id); });
+    });
+  }
+
+  document.querySelectorAll(".group-checkbox").forEach(function(cb) {
+    cb.addEventListener("change", function() {
+      var group = cb.getAttribute("data-group");
+      ROSTER.filter(function(p) { return p.group === group; }).forEach(function(p) {
+        if (cb.checked) { selected.add(p.id); } else { selected.delete(p.id); }
+      });
+      renderRoster();
+    });
+  });
+
+  document.getElementById("clear-roster-btn").addEventListener("click", function() {
+    selected.clear();
+    syncGroupCheckboxes();
+    renderRoster();
+  });
+
+  // Individual search -- add/remove one person at a time regardless of
+  // group filter state, so "all Chevaliers except three people" or
+  // "just these eleven names, no filter at all" both work naturally.
+  var searchInput = document.getElementById("person-search");
+  var searchResults = document.getElementById("search-results");
+
+  searchInput.addEventListener("input", function() {
+    var q = searchInput.value.trim().toLowerCase();
+    if (!q) { searchResults.style.display = "none"; searchResults.innerHTML = ""; return; }
+    var matches = ROSTER.filter(function(p) { return p.name.toLowerCase().indexOf(q) !== -1; }).slice(0, 15);
+    if (matches.length === 0) {
+      searchResults.innerHTML = "<div class=\"result-row already-added\">No matches</div>";
+    } else {
+      searchResults.innerHTML = "";
+      matches.forEach(function(p) {
+        var row = document.createElement("div");
+        var already = selected.has(p.id);
+        row.className = "result-row" + (already ? " already-added" : "");
+        row.textContent = p.name + " (" + p.email + ")" + (already ? " — already added" : "");
+        if (!already) {
+          row.addEventListener("click", function() {
+            selected.add(p.id);
+            syncGroupCheckboxes();
+            renderRoster();
+            searchInput.value = "";
+            searchResults.style.display = "none";
+          });
+        }
+        searchResults.appendChild(row);
+      });
+    }
+    searchResults.style.display = "block";
+  });
+
+  document.addEventListener("click", function(e) {
+    if (e.target !== searchInput && !searchResults.contains(e.target)) {
+      searchResults.style.display = "none";
+    }
+  });
+
+  renderRoster();
+
+  // Quill editor
+  var quill = new Quill("#quill-editor", {
+    theme: "snow",
+    modules: {
+      toolbar: [
+        ["bold", "italic", "underline"],
+        [{ "color": [] }],
+        [{ "size": ["small", false, "large", "huge"] }],
+        [{ "list": "ordered" }, { "list": "bullet" }],
+        ["link"],
+        ["clean"]
+      ]
+    }
+  });
+
+  function currentBodyHtml() {
+    var temp = document.createElement("div");
+    temp.innerHTML = quill.root.innerHTML;
+    temp.querySelectorAll("a").forEach(function(a) {
+      a.setAttribute("target", "_blank");
+      a.setAttribute("rel", "noopener noreferrer");
+    });
+    return temp.innerHTML;
+  }
+
+  document.getElementById("broadcast-form").addEventListener("submit", function(e) {
+    document.getElementById("body").value = currentBodyHtml();
+    if (selected.size === 0) {
+      e.preventDefault();
+      alert("Select at least one recipient before sending.");
+      return;
+    }
+    var subject = document.getElementById("subject").value.trim();
+    if (!confirm("Send to " + selected.size + " recipient(s)?")) {
+      e.preventDefault();
+    }
+  });
+
+  document.getElementById("send-test-btn").addEventListener("click", function() {
+    document.getElementById("test-subject").value = document.getElementById("subject").value;
+    document.getElementById("test-body").value = currentBodyHtml();
+    document.getElementById("test-form").submit();
+  });
+</script>
+{% endblock %}

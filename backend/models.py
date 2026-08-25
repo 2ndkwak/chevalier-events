@@ -836,6 +836,70 @@ class EventPromotionSend(db.Model):
     )
 
 
+# --- AD-HOC (BROADCAST) EMAIL --------------------------------------------------
+# Aug 2026 "Send Email" feature: lets the Grand Senechal send a one-off,
+# free-text email -- not tied to any event -- to a chosen subset of
+# members/partners, using the same branded shell as promotion emails.
+# Deliberately separate tables from EventPromotionSend/Event rather than
+# overloading either one, since this isn't scoped to an event at all; the
+# resumable-send-log pattern is otherwise identical (see
+# routes/broadcast.py's _send_adhoc_batch, modeled directly on
+# routes/events.py's _send_promotion_batch).
+
+class AdHocEmail(db.Model):
+    """One row per composed-and-sent broadcast email. body_html is
+    Quill-produced HTML (same trust boundary as Event.description --
+    GS-authored content only, never member-supplied), rendered with
+    |safe in email/adhoc.html. recipient_count is a static snapshot of
+    how many people were targeted at send time, for the Email History
+    list -- NOT the same as counting AdHocEmailSend rows, which only
+    grows to that number once every send in the batch actually
+    succeeds."""
+    __tablename__ = "adhoc_emails"
+
+    id               = db.Column(db.Integer, primary_key=True)
+    subject          = db.Column(db.String(300), nullable=False)
+    body_html        = db.Column(db.Text, nullable=False)
+    sender_id        = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=True)
+    recipient_count  = db.Column(db.Integer, nullable=False, default=0)
+    created_at       = db.Column(db.DateTime, default=datetime.utcnow)
+
+    sender           = db.relationship("Person")
+    sends            = db.relationship("AdHocEmailSend", back_populates="adhoc_email",
+                                       cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<AdHocEmail {self.id} '{self.subject}'>"
+
+
+class AdHocEmailSend(db.Model):
+    """One row per (adhoc_email, person) that has successfully received
+    that broadcast -- same resumable-log shape as EventPromotionSend:
+    written immediately after each individual send succeeds (not
+    batched at the end), so an interrupted batch can be safely re-run
+    and will only reach whoever isn't logged here yet. Bounce status is
+    deliberately NOT duplicated onto this row -- like EventPromotionSend,
+    it reads Person.email_bounced_at/email_bounce_type directly, since
+    that's the address's current status, not a fact about this specific
+    send."""
+    __tablename__ = "adhoc_email_sends"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    adhoc_email_id  = db.Column(db.Integer, db.ForeignKey("adhoc_emails.id"), nullable=False)
+    person_id       = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=False)
+    sent_at         = db.Column(db.DateTime, nullable=False)
+    # First-open-wins, same logic as EventPromotionSend.opened_at /
+    # Person.invite_opened_at.
+    opened_at       = db.Column(db.DateTime, nullable=True)
+
+    adhoc_email     = db.relationship("AdHocEmail", back_populates="sends")
+    person          = db.relationship("Person")
+
+    __table_args__ = (
+        db.UniqueConstraint("adhoc_email_id", "person_id", name="uq_adhoc_email_person"),
+    )
+
+
 # --- EVENT MATERIALS CHECKLIST -------------------------------------------------
 # Presence of a row = that pre-event material has been prepared and checked off
 # by the Grand Senechal. Purely manual -- nothing here is set automatically by

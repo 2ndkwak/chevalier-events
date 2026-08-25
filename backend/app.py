@@ -123,6 +123,7 @@ def create_app(config=None):
     from .routes.import_members import import_bp
     from .routes.portal        import portal_bp
     from .routes.webhooks      import webhooks_bp
+    from .routes.broadcast     import broadcast_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp,          url_prefix="/admin")
@@ -133,6 +134,7 @@ def create_app(config=None):
     app.register_blueprint(import_bp,         url_prefix="/admin/import")
     app.register_blueprint(portal_bp,         url_prefix="/portal")
     app.register_blueprint(webhooks_bp)
+    app.register_blueprint(broadcast_bp,      url_prefix="/admin/broadcast")
 
     # -- Bare-domain redirect -------------------------------------------
     @app.route("/")

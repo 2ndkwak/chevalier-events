@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}Email History — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Email History</h1>
+  <div style="display:flex; gap:.5rem;">
+    <a href="{{ url_for('broadcast.compose') }}" class="btn btn-primary">[Email] Send Email</a>
+    <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline">← Back to Dashboard</a>
+  </div>
+</div>
+
+{% if not emails %}
+<div class="card">
+  <p class="text-muted text-sm">No ad-hoc emails have been sent yet.</p>
+</div>
+{% else %}
+{% for email in emails %}
+<div class="card" style="margin-bottom:1rem;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:.5rem;">
+    <div>
+      <div style="font-size:1.05rem; color:var(--burgundy);">{{ email.subject }}</div>
+      <div class="text-muted text-sm" style="margin-top:.2rem;">
+        Sent by {{ email.sender.display_name if email.sender else "Unknown" }} &middot;
+        <span data-utc-time="{{ email.created_at.isoformat() }}Z" data-utc-time-format="datetime">
+          {{ email.created_at.strftime('%b %d, %Y %I:%M %p') }} UTC
+        </span>
+        &middot; {{ email.recipient_count }} recipient(s) targeted, {{ email.sends|length }} sent so far
+      </div>
+    </div>
+    <button type="button" class="btn btn-outline btn-sm" onclick="toggleHistoryResults({{ email.id }})">
+      <span id="history-toggle-label-{{ email.id }}">Show results ({{ email.sends|length }})</span>
+    </button>
+  </div>
+
+  <div id="history-results-{{ email.id }}" style="display:none; margin-top:1rem;">
+    <table style="width:100%; font-size:.9rem;">
+      <thead>
+        <tr style="text-align:left; color:var(--ink-muted); font-size:.75rem; text-transform:uppercase; letter-spacing:.05em;">
+          <th style="padding-bottom:.4rem;">Name</th>
+          <th style="padding-bottom:.4rem;">Sent</th>
+          <th style="padding-bottom:.4rem;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in email.sends|sort(attribute='person.display_name') %}
+        <tr style="border-top:1px solid var(--parchment-md);">
+          <td style="padding:.4rem 0;">{{ row.person.display_name }}</td>
+          <td style="padding:.4rem 0;" class="text-sm text-muted">
+            <span data-utc-time="{{ row.sent_at.isoformat() }}Z" data-utc-time-format="date">{{ row.sent_at.strftime('%b %d') }} UTC</span>
+          </td>
+          <td style="padding:.4rem 0;">
+            {% if row.person.email_bounced_at %}
+              <span class="badge badge-danger" title="{{ row.person.email_bounce_type or 'Bounced' }}">Bounced</span>
+            {% elif row.opened_at %}
+              <span class="badge badge-success">Opened <span data-utc-time="{{ row.opened_at.isoformat() }}Z" data-utc-time-format="date">{{ row.opened_at.strftime('%b %d') }} UTC</span></span>
+            {% else %}
+              <span class="badge badge-muted">Sent, not opened</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if email.sends|length < email.recipient_count %}
+    <p class="text-muted text-sm" style="margin-top:.6rem;">
+      {{ email.recipient_count - email.sends|length }} recipient(s) targeted but not yet sent
+      (send may still be in progress, or a send-level error occurred — check server logs).
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+<script>
+  function toggleHistoryResults(id) {
+    var section = document.getElementById("history-results-" + id);
+    var label = document.getElementById("history-toggle-label-" + id);
+    var showing = section.style.display !== "none";
+    section.style.display = showing ? "none" : "block";
+    var count = label.textContent.match(/\((\d+)\)/);
+    var n = count ? count[1] : "";
+    label.textContent = showing ? ("Show results (" + n + ")") : "Hide results";
+  }
+</script>
+{% endif %}
+{% endblock %}

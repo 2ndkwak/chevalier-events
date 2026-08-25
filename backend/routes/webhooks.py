@@ -58,9 +58,10 @@ def postmark_webhook():
     kind = metadata.get("kind")
     person_id = metadata.get("person-id")
     event_id = metadata.get("event-id")
+    adhoc_email_id = metadata.get("adhoc-email-id")
 
     try:
-        from ..models import db, Person, EventPromotionSend
+        from ..models import db, Person, EventPromotionSend, AdHocEmailSend
         from ..util import utcnow
 
         if record_type == "Bounce":
@@ -101,6 +102,15 @@ def postmark_webhook():
                     person.invite_opened_at = utcnow()
                     db.session.commit()
                     print(f"[postmark webhook] invite open recorded: person {person_id}", flush=True)
+            elif kind == "adhoc" and person_id and adhoc_email_id:
+                row = AdHocEmailSend.query.filter_by(
+                    adhoc_email_id=int(adhoc_email_id), person_id=int(person_id)
+                ).first()
+                if row and not row.opened_at:
+                    row.opened_at = utcnow()
+                    db.session.commit()
+                    print(f"[postmark webhook] adhoc email open recorded: "
+                          f"email {adhoc_email_id}, person {person_id}", flush=True)
             else:
                 print(f"[postmark webhook] open event with unrecognized/missing "
                       f"metadata: {metadata!r}", flush=True)
