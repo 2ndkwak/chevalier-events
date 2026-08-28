@@ -16,7 +16,6 @@ Run manually with:
 """
 import sys
 import os
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -24,6 +23,7 @@ from backend.app import create_app
 from backend.models import db, RSVP
 from backend.waitlist import promote_from_waitlist
 from backend.email import send_promotion_expired_email, send_waitlist_promotion_email
+from backend.util import utcnow
 
 # Explicit absolute DB path (same computation used by the migration
 # scripts) so this resolves correctly no matter what working directory
@@ -34,7 +34,7 @@ _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "instance", 
 def main():
     app = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{_DB_PATH}"})
     with app.app_context():
-        now = datetime.utcnow()
+        now = utcnow()
         lapsed = RSVP.query.filter(
             RSVP.status == "promoted",
             RSVP.promotion_expires_at < now,

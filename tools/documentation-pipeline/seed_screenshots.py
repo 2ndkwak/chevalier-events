@@ -30,6 +30,7 @@ from backend import create_app
 from backend.models import (
     db, Person, Event, RSVP, RSVPGuest, EventPromotionSend, DietaryTag,
 )
+from backend.util import utcnow
 
 app = create_app()
 
@@ -38,7 +39,7 @@ with app.app_context():
     db.drop_all()
     db.create_all()
 
-    now = datetime.utcnow()
+    now = utcnow()
 
     # ---- Admin / GS account -------------------------------------------
     trey = Person(person_type="member", title="", first_name="Trey", last_name="Admin",
