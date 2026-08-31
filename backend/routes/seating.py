@@ -1690,15 +1690,24 @@ def _get_attendees(event):
         })
         for g in rsvp.guests:
             # Skip if this guest is actually a linked partner already in the confirmed list
-            # Match by name to catch cases where partner was added manually as a guest
+            # Match by name to catch cases where partner was added manually as a guest.
+            # Checked BIDIRECTIONALLY -- some real member records only have the partner_id
+            # link set on one side (e.g. an older import, or a manual edit that didn't set
+            # both directions). Relying only on "my own partner_id field" would miss the
+            # case where THIS person's field is blank but the partner's own field correctly
+            # points back here -- silently double-counting that partner as a phantom guest
+            # on top of their own real, confirmed RSVP. See _build_parties for the same fix.
             is_linked_partner = False
+            partner = None
             if p.partner_id:
                 partner = Person.query.get(p.partner_id)
-                if partner and partner.id in confirmed_person_ids:
-                    # Partner has their own RSVP -- skip if guest name matches partner
-                    if (g.first_name.lower() == partner.first_name.lower() and
+            if partner is None:
+                partner = Person.query.filter_by(partner_id=p.id).first()
+            if partner and partner.id in confirmed_person_ids:
+                # Partner has their own RSVP -- skip if guest name matches partner
+                if (g.first_name.lower() == partner.first_name.lower() and
                         g.last_name.lower() == partner.last_name.lower()):
-                        is_linked_partner = True
+                    is_linked_partner = True
 
             if not is_linked_partner:
                 attendees.append({
@@ -2038,6 +2047,24 @@ def _apply_party_rules(parties, rules):
         for p in parties:
             if pid in p["member_ids"]:
                 return p
+        # Not a full member anywhere -- may be present only as a "Guest of"
+        # their own linked partner (a real, linked Person record, but
+        # recorded via the guest table because the RSVP used the
+        # "+ Add partner" quick-add instead of confirming their own RSVP).
+        # They have no member_ids entry of their own in that case, but the
+        # party they belong to is still findable: whichever party their
+        # linked partner is a member of. Checked bidirectionally so a
+        # one-sided partner_id link still resolves.
+        person = Person.query.get(pid)
+        if person:
+            partner_id = person.partner_id
+            if not partner_id:
+                reverse = Person.query.filter_by(partner_id=pid).first()
+                partner_id = reverse.id if reverse else None
+            if partner_id:
+                for p in parties:
+                    if partner_id in p["member_ids"]:
+                        return p
         return None
 
     for a_id, b_id in (rules.get("prefer_together") or []):
@@ -2567,6 +2594,43 @@ def _enforce_rules(event_id, couples_data):
         tables.setdefault(sa.table_num, []).append(sa)
     pid_to_sa: dict[int, object] = {sa.person_id: sa for sa in all_sa if sa.person_id}
 
+    # Who each person is personally hosting as an RSVP guest, for this event.
+    # This is how a "Guest of" partner is recorded -- they have no seat of
+    # their own to find via person_id, only a guest_id under their host's
+    # RSVP. Computed once: who hosts whom doesn't change while enforcement
+    # runs below, only where people are currently seated.
+    hosted_guest_ids_by_person: dict[int, set] = {}
+    for rsvp in RSVP.query.filter_by(event_id=event_id).all():
+        if rsvp.person_id:
+            hosted_guest_ids_by_person[rsvp.person_id] = {g.id for g in rsvp.guests}
+
+    def _party_mate_seated_at(person_id, table_num, all_sa_now):
+        """
+        True if a party-mate of `person_id` is currently seated at
+        `table_num` -- either their linked partner (Person.partner_id,
+        checked bidirectionally so a one-sided link still counts), OR
+        anyone they're personally hosting as an RSVP guest. Relying on
+        Person.partner_id + person_id-based seats alone misses every
+        "Guest of" partner, who only ever has a guest_id-based seat --
+        that blind spot is what let a lone officer or "not together" move
+        strand their guest-recorded partner without anyone noticing.
+        """
+        gid_to_table = {sa.guest_id: sa.table_num for sa in all_sa_now if sa.guest_id}
+        pid_to_table = {sa.person_id: sa.table_num for sa in all_sa_now if sa.person_id}
+
+        person = Person.query.get(person_id)
+        if person:
+            partner = Person.query.get(person.partner_id) if person.partner_id else None
+            if partner is None:
+                partner = Person.query.filter_by(partner_id=person_id).first()
+            if partner and pid_to_table.get(partner.id) == table_num:
+                return True
+
+        for gid in hosted_guest_ids_by_person.get(person_id, ()):
+            if gid_to_table.get(gid) == table_num:
+                return True
+        return False
+
     # -- 1. Spread officers ------------------------------------------------------
     num_tables = len(tables)
     if _rule_active("officer_per_table") and num_tables >= 2:
@@ -2586,11 +2650,7 @@ def _enforce_rules(event_id, couples_data):
             tnum_to   = empty_tables[0]
 
             def _has_partner_here(sa):
-                person = Person.query.get(sa.person_id)
-                if not person or not person.partner_id:
-                    return False
-                partner_sa = pid_to_sa.get(person.partner_id)
-                return partner_sa is not None and partner_sa.table_num == tnum_from
+                return _party_mate_seated_at(sa.person_id, tnum_from, all_sa)
 
             officer_sa = next(
                 (sa for sa in tables[tnum_from]
@@ -2604,11 +2664,7 @@ def _enforce_rules(event_id, couples_data):
                 break
 
             def _target_has_partner_here(sa):
-                person = Person.query.get(sa.person_id)
-                if not person or not person.partner_id:
-                    return False
-                partner_sa = pid_to_sa.get(person.partner_id)
-                return partner_sa is not None and partner_sa.table_num == tnum_to
+                return _party_mate_seated_at(sa.person_id, tnum_to, all_sa)
 
             swap_target = next(
                 (sa for sa in tables[tnum_to]
@@ -2659,11 +2715,7 @@ def _enforce_rules(event_id, couples_data):
     table_sizes = {t["id"]: t["size"] for t in (event.table_config or {}).get("tables", [])}
 
     def _seated_with_partner(sa):
-        person = Person.query.get(sa.person_id)
-        if not person or not person.partner_id:
-            return False
-        partner_sa = pid_to_sa.get(person.partner_id)
-        return partner_sa is not None and partner_sa.table_num == sa.table_num
+        return _party_mate_seated_at(sa.person_id, sa.table_num, all_sa)
 
     for a_id, b_id in not_together_pairs:
         sa_a = pid_to_sa.get(a_id)

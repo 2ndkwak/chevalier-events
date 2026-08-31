@@ -332,17 +332,76 @@ Confrerie des Chevaliers du Tastevin
     _send(msg, sender_key="MAIL_SENDER_ADMIN", connection=connection)
 
 
-def send_cancellation_email(person, event):
-    """Confirm to a member that their reservation has been cancelled."""
+def send_cancellation_email(person, event, partner_still_confirmed=None, partner_cancel_token=None):
+    """Confirm to a member that their reservation has been cancelled.
+
+    If partner_still_confirmed is given (a Person who RSVP'd separately
+    and is still confirmed for this event), the email also lets the
+    member know and offers a one-click link to cancel the partner's
+    reservation too, rather than assuming either way."""
     if not person.email:
         return
+
+    partner_note = ""
+    if partner_still_confirmed and partner_cancel_token:
+        from flask import url_for
+        link = url_for("portal.cancel_partner", token=partner_cancel_token, _external=True)
+        partner_note = f"""
+
+{partner_still_confirmed.display_name}'s reservation for this event is still confirmed -- we didn't want to assume you'd want that cancelled too. If you'd like to cancel it as well, click below (valid for 7 days):
+
+{link}"""
 
     subject = f"Reservation cancelled -- {event.title}"
     body = f"""{greeting(person)},
 
-This confirms your reservation for {event.title} on {event.event_date.strftime('%A, %B %d, %Y')} has been cancelled.
+This confirms your reservation for {event.title} on {event.event_date.strftime('%A, %B %d, %Y')} has been cancelled.{partner_note}
 
-If this was a mistake, or you'd like to be added back to the waitlist, please log in to the Chevalier Events portal.
+If this was a mistake, or you'd like to be added back to a waitlist, please log in to the Chevalier Events portal.
+
+Tastevin en Main,
+Confrerie des Chevaliers du Tastevin
+""".strip()
+
+    msg = Message(subject=subject, recipients=[person.email], body=body)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
+
+
+def send_partner_cancelled_email(person, event, cancelled_by):
+    """Notify a member their own reservation was cancelled -- either
+    because their linked partner cancelled (automatic cascade), or
+    because their partner used the self-service cancel-partner link
+    on their separately-made RSVP.
+
+    If this person has no email on file, there's no one to notify
+    directly -- falls back to telling cancelled_by instead, since
+    they're the one who can act on it."""
+    if not person.email:
+        if not cancelled_by.email:
+            return  # neither has an email on file -- nothing more we can do
+        from flask import current_app
+        gs_email = current_app.config.get("ADMIN_EMAIL") or ""
+        subject = f"Reservation cancelled -- {event.title}"
+        body = f"""{greeting(cancelled_by)},
+
+{person.display_name}'s reservation for {event.title} on {event.event_date.strftime('%A, %B %d, %Y')} has been cancelled. We weren't able to notify {person.display_name} directly since we don't have an email on file for them, so we're letting you know instead.
+
+If you'd only like {person.display_name}'s reservation restored, without your own, please contact the Grand Sen\u00e8chal at {gs_email} and we'll take care of it.
+
+Tastevin en Main,
+Confrerie des Chevaliers du Tastevin
+""".strip()
+        msg = Message(subject=subject, recipients=[cancelled_by.email], body=body)
+        _send(msg, sender_key="MAIL_SENDER_EVENTS")
+        return
+
+    pronoun = {"M": "his", "F": "her"}.get(cancelled_by.gender, "their")
+    subject = f"Reservation cancelled -- {event.title}"
+    body = f"""{greeting(person)},
+
+{cancelled_by.display_name} canceled {pronoun} reservation for {event.title} on {event.event_date.strftime('%A, %B %d, %Y')}, and your reservation has been cancelled along with it.
+
+If this was a mistake, or you'd like to be added back to a waitlist, please log in to the Chevalier Events portal.
 
 Tastevin en Main,
 Confrerie des Chevaliers du Tastevin

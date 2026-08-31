@@ -54,6 +54,16 @@ def event_detail(event_id):
 def rsvp(event_id):
     event   = Event.query.get_or_404(event_id)
     my_rsvp = RSVP.query.filter_by(event_id=event_id, person_id=current_user.id).first()
+    partner_rsvp = None
+    if current_user.partner_id:
+        candidate = RSVP.query.filter_by(
+            event_id=event_id, person_id=current_user.partner_id).first()
+        # Only counts as "already RSVP'd" for display purposes if it's an
+        # active reservation -- a declined/expired row (e.g. from an
+        # earlier cascade cancellation) should still show the add/revive
+        # button, not hide it behind a false "Already RSVP'd" pill.
+        if candidate and candidate.status not in ("declined", "expired"):
+            partner_rsvp = candidate
 
     # Enforce deadline -- block new RSVPs and cancellations after close time
     from datetime import datetime as dt
@@ -69,10 +79,45 @@ def rsvp(event_id):
                 my_rsvp.status = "declined"
                 for g in list(my_rsvp.guests):
                     db.session.delete(g)
+
+                from ..email import (send_cancellation_email, send_waitlist_promotion_email,
+                                     send_partner_cancelled_email)
+
+                # Linked partner (registered together, e.g. via the admin
+                # "Add RSVP" tool or the portal's partner quick-add) --
+                # cascade automatically. They registered as a package, so
+                # there's no independent choice to preserve here.
+                linked_partner_rsvp = my_rsvp.linked_rsvp
+                cascaded_partner = None
+                if linked_partner_rsvp and linked_partner_rsvp.status not in ("declined", "expired"):
+                    linked_partner_rsvp.status = "declined"
+                    for g in list(linked_partner_rsvp.guests):
+                        db.session.delete(g)
+                    cascaded_partner = linked_partner_rsvp.person
+
+                # Partner has their OWN, separately-made RSVP (not linked)
+                # -- don't assume their intent. Leave their reservation
+                # alone, but give them an easy way to follow suit if they
+                # want to, via a one-click emailed link.
+                partner_cancel_token = None
+                notify_partner = None
+                if (not linked_partner_rsvp and partner_rsvp
+                        and partner_rsvp.status not in ("declined", "expired")):
+                    import secrets
+                    from datetime import timedelta
+                    from ..util import utcnow
+                    partner_cancel_token = secrets.token_urlsafe(32)
+                    partner_rsvp.cancel_token = partner_cancel_token
+                    partner_rsvp.cancel_token_expires_at = utcnow() + timedelta(days=7)
+                    notify_partner = partner_rsvp.person
+
                 db.session.commit()
 
-                from ..email import send_cancellation_email, send_waitlist_promotion_email
-                send_cancellation_email(current_user, event)
+                send_cancellation_email(current_user, event,
+                                        partner_still_confirmed=notify_partner,
+                                        partner_cancel_token=partner_cancel_token)
+                if cascaded_partner:
+                    send_partner_cancelled_email(cascaded_partner, event, current_user)
 
                 promoted = promote_from_waitlist(event, cancelled_by=current_user)
                 for promoted_rsvp in promoted:
@@ -86,7 +131,11 @@ def rsvp(event_id):
                     # they get the whole story in one message.
                     _notify_admin("cancelled their reservation", event, current_user)
 
-                flash("Your reservation has been cancelled.", "success")
+                if cascaded_partner:
+                    flash(f"Your reservation has been cancelled, along with "
+                         f"{cascaded_partner.display_name}'s linked reservation.", "success")
+                else:
+                    flash("Your reservation has been cancelled.", "success")
             return redirect(url_for("portal.event_detail", event_id=event_id))
 
         status = "confirmed"
@@ -99,6 +148,38 @@ def rsvp(event_id):
             db.session.flush()
         else:
             my_rsvp.status = status
+
+        # Partner, added via the "+ Add [partner]" quick-add: give them
+        # their own real, linked RSVP (same mechanism the admin "Add RSVP"
+        # tool uses) rather than folding them into the guest list below.
+        # A guest-table entry has no connection back to their actual
+        # Person record at all -- it can't be found by seating rules,
+        # locks, or the "Guest of" display logic that a real linked RSVP
+        # gets automatically. If they already have their own ACTIVE RSVP
+        # for this event (e.g. they RSVP'd separately themselves), leave
+        # it untouched -- nothing to do. But if their existing RSVP is
+        # declined/expired (e.g. from an earlier cascade cancellation,
+        # linked or not), revive it rather than silently leaving them
+        # cancelled -- otherwise there'd be no way to bring a
+        # cascade-cancelled partner back through the portal at all.
+        include_partner = request.form.get("include_partner") == "1"
+        if include_partner and current_user.partner_id:
+            partner = Person.query.get(current_user.partner_id)
+            if partner:
+                partner_rsvp_row = RSVP.query.filter_by(
+                    event_id=event_id, person_id=partner.id).first()
+                if not partner_rsvp_row:
+                    partner_rsvp_row = RSVP(event_id=event_id, person_id=partner.id, status=status)
+                    db.session.add(partner_rsvp_row)
+                    db.session.flush()
+                    my_rsvp.linked_rsvp_id = partner_rsvp_row.id
+                    partner_rsvp_row.linked_rsvp_id = my_rsvp.id
+                elif partner_rsvp_row.status in ("declined", "expired"):
+                    partner_rsvp_row.status = status
+                    partner_rsvp_row.cancel_token = None
+                    partner_rsvp_row.cancel_token_expires_at = None
+                    my_rsvp.linked_rsvp_id = partner_rsvp_row.id
+                    partner_rsvp_row.linked_rsvp_id = my_rsvp.id
 
         for g in list(my_rsvp.guests):
             db.session.delete(g)
@@ -134,6 +215,7 @@ def rsvp(event_id):
         return redirect(url_for("portal.event_detail", event_id=event_id))
 
     return render_template("portal/rsvp_form.html", event=event, my_rsvp=my_rsvp,
+                           partner_rsvp=partner_rsvp,
                            all_tags=DietaryTag.query.order_by(DietaryTag.label).all())
 
 
@@ -185,6 +267,46 @@ def confirm_promotion(token):
     return render_template("portal/confirm_promotion.html",
                            rsvp=rsvp, event=event,
                            already_resolved=already_resolved, expired=expired)
+
+
+@portal_bp.route("/rsvp/cancel-partner/<token>", methods=["GET", "POST"])
+def cancel_partner(token):
+    """
+    Public (no login required) link from a cancellation email, letting
+    someone cancel their partner's separately-made (unlinked) RSVP too,
+    since the app doesn't assume that's wanted just because they
+    cancelled their own. Valid for 7 days.
+    """
+    from datetime import datetime as dt
+    from ..email import send_partner_cancelled_email
+
+    rsvp = RSVP.query.filter_by(cancel_token=token).first_or_404()
+    event = rsvp.event
+
+    already_resolved = rsvp.status in ("declined", "expired")
+    expired_link = (not already_resolved) and rsvp.cancel_token_expires_at \
+                   and dt.utcnow() > rsvp.cancel_token_expires_at
+
+    if request.method == "POST" and not already_resolved and not expired_link:
+        cancelling_person = rsvp.person.partner  # the one who cancelled first
+        rsvp.status = "declined"
+        for g in list(rsvp.guests):
+            db.session.delete(g)
+        db.session.commit()
+
+        if cancelling_person:
+            send_partner_cancelled_email(rsvp.person, event, cancelling_person)
+
+        promoted = promote_from_waitlist(event, cancelled_by=cancelling_person)
+        from ..email import send_waitlist_promotion_email
+        for new_rsvp in promoted:
+            send_waitlist_promotion_email(new_rsvp.person, event, new_rsvp)
+
+        flash("Reservation cancelled.", "success")
+        return redirect(url_for("portal.cancel_partner", token=token))
+
+    return render_template("portal/cancel_partner.html", rsvp=rsvp, event=event,
+                           already_resolved=already_resolved, expired=expired_link)
 
 
 @portal_bp.route("/members")

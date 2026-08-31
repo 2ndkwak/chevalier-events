@@ -25,7 +25,7 @@
       <!-- Quick-add spouse/partner -->
       {% if current_user.partner %}
       {% set partner = current_user.partner %}
-      {% set already_added = my_rsvp and my_rsvp.guests|selectattr('last_name','eq',partner.last_name)|list %}
+      <input type="hidden" name="include_partner" id="include_partner" value="{{ '1' if partner_rsvp else '0' }}">
       <div style="background:var(--parchment); border:1px solid var(--parchment-md);
                   border-radius:5px; padding:.8rem 1rem; margin-bottom:1rem;
                   display:flex; align-items:center; justify-content:space-between; gap:1rem;">
@@ -34,16 +34,16 @@
                        text-transform:uppercase; letter-spacing:.06em;">Your partner</span>
           <div style="font-size:.95rem; color:var(--ink);">{{ partner.display_name }}</div>
         </div>
-        <button type="button" onclick="addPartner(
-            '{{ partner.title or '' }}',
-            '{{ partner.first_name }}',
-            '{{ partner.last_name }}',
-            '{{ partner.suffix or '' }}',
-            '{{ partner.gender or '' }}',
-            '{{ partner.dietary_tags|map(attribute="label")|join(", ") }}'
-          )" class="btn btn-gold btn-sm" style="white-space:nowrap;">
+        {% if partner_rsvp %}
+        <span class="btn btn-sm" style="white-space:nowrap; background:var(--parchment-md); color:var(--ink-muted); cursor:default;">
+          &#10003; Already RSVP'd
+        </span>
+        {% else %}
+        <button type="button" id="partner-toggle-btn" onclick="togglePartner()"
+                class="btn btn-gold btn-sm" style="white-space:nowrap;">
           + Add {{ partner.first_name }}
         </button>
+        {% endif %}
       </div>
       {% endif %}
 
@@ -137,54 +137,18 @@
 <script>
   let guestCount = {{ (my_rsvp.guests|length) if my_rsvp and my_rsvp.guests else 0 }};
 
-  function addPartner(title, first, last, suffix, gender, allergyTags) {
-    guestCount++;
-    const idx = guestCount;
-    const row = document.createElement('div');
-    row.className = 'guest-row';
-    row.style.cssText = 'background:var(--gold-pale);border:1px solid var(--gold);border-radius:5px;padding:.8rem;margin-bottom:.6rem;position:relative;';
-    row.innerHTML = `
-      <div class="form-grid" style="grid-template-columns:80px 1fr 1fr 60px;">
-        <div class="form-group">
-          <label>Title</label>
-          <input type="text" name="guest_${idx}_title" value="${title}">
-        </div>
-        <div class="form-group">
-          <label>First name *</label>
-          <input type="text" name="guest_${idx}_first" value="${first}" required>
-        </div>
-        <div class="form-group">
-          <label>Last name *</label>
-          <input type="text" name="guest_${idx}_last" value="${last}" required>
-        </div>
-        <div class="form-group">
-          <label>Suffix</label>
-          <input type="text" name="guest_${idx}_suffix" value="${suffix}">
-        </div>
-        <div class="form-group full">
-          <label>Allergy / dietary tags</label>
-          <input type="text" name="guest_${idx}_allergy_tags" list="allergy_tag_options" value="${allergyTags}">
-        </div>
-        <div class="form-group full" style="margin-top:.3rem;">
-          <label>Gender *</label>
-          <div style="display:flex; gap:1.5rem; margin-top:.2rem;">
-            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
-              <input type="radio" name="guest_${idx}_gender" value="M" ${gender==='M'?'checked':''} required> Male
-            </label>
-            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
-              <input type="radio" name="guest_${idx}_gender" value="F" ${gender==='F'?'checked':''}> Female
-            </label>
-            <label style="display:flex;align-items:center;gap:.4rem;text-transform:none;letter-spacing:0;font-size:.9rem;">
-              <input type="radio" name="guest_${idx}_gender" value="Other" ${gender==='Other'?'checked':''}> Other
-            </label>
-          </div>
-        </div>
-      </div>
-      <button type="button" onclick="removeGuest(this)"
-              style="position:absolute;top:.5rem;right:.6rem;background:none;border:none;
-                     color:var(--ink-muted);cursor:pointer;font-size:1rem;">✕</button>
-    `;
-    document.getElementById('guest-list').appendChild(row);
+  function togglePartner() {
+    const field = document.getElementById('include_partner');
+    const btn = document.getElementById('partner-toggle-btn');
+    const nowIncluded = field.value !== '1';
+    field.value = nowIncluded ? '1' : '0';
+    btn.textContent = nowIncluded ? '\u2713 Added' : btn.textContent.replace('\u2713 Added', '+ Add');
+    if (nowIncluded) {
+      btn.dataset.label = btn.textContent;
+      btn.textContent = '\u2713 Added';
+    } else if (btn.dataset.label) {
+      btn.textContent = btn.dataset.label;
+    }
   }
 
   function addGuest() {

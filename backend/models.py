@@ -597,6 +597,15 @@ class RSVP(db.Model):
     linked_rsvp      = db.relationship("RSVP", remote_side="RSVP.id",
                                        foreign_keys=[linked_rsvp_id], uselist=False)
 
+    # Self-service "cancel my partner's reservation too" link, sent by
+    # email when a member cancels and their linked partner (Person.partner_id)
+    # has their OWN, separately-made RSVP for the same event (i.e. NOT
+    # a linked_rsvp_id pair -- those cascade automatically since they
+    # registered as a unit). Set only on the partner's RSVP, valid for
+    # 7 days.
+    cancel_token             = db.Column(db.String(64), unique=True, nullable=True)
+    cancel_token_expires_at  = db.Column(db.DateTime, nullable=True)
+
     # Menu booklet officer-list print order for this event only -- the
     # person's officer title itself (Person.officer_role) is permanent,
     # but whether/where they print in a given booklet's officer section

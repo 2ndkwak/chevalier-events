@@ -434,8 +434,10 @@ def remove_rsvp(event_id, rsvp_id):
     # If this was one half of a still-pending promoted couple, don't
     # strand the other partner in limbo -- put them back on the
     # waitlist (at their original position) rather than deleting them.
-    if rsvp.status == "promoted" and rsvp.linked_rsvp and rsvp.linked_rsvp.status == "promoted":
-        partner = rsvp.linked_rsvp
+    linked = rsvp.linked_rsvp
+    cascaded_confirmed_partner = None
+    if rsvp.status == "promoted" and linked and linked.status == "promoted":
+        partner = linked
         partner.status = "waitlist"
         partner.linked_rsvp_id = None
         partner.promotion_token = None
@@ -443,9 +445,38 @@ def remove_rsvp(event_id, rsvp_id):
         partner.promotion_expires_at = None
         name += f" (their partner, {partner.person.display_name}, has been returned to the waitlist)"
 
+    # If this was one half of a linked couple (registered together as a
+    # unit) with a genuinely confirmed seat, remove the partner's
+    # reservation too -- same reasoning as the self-service cancel:
+    # they registered as a package, so there's no independent
+    # reservation to preserve.
+    elif rsvp.status == "confirmed" and linked and linked.status == "confirmed":
+        cascaded_confirmed_partner = linked.person
+        db.session.delete(linked)
+        name += f", along with their linked partner {cascaded_confirmed_partner.display_name}"
+        freed_seat = True  # two seats freed now, not just one
+
+    # Partner has their OWN, separate (unlinked) confirmed RSVP --
+    # don't touch it, but flag it so it's not silently left standing.
+    unlinked_partner_note = None
+    if not linked and rsvp.person.partner_id and rsvp.status == "confirmed":
+        partner_rsvp = RSVP.query.filter_by(
+            event_id=event_id, person_id=rsvp.person.partner_id, status="confirmed").first()
+        if partner_rsvp:
+            unlinked_partner_note = partner_rsvp.person.display_name
+
+    cancelling_person = rsvp.person
     db.session.delete(rsvp)
     db.session.commit()
     flash(f"{name}'s RSVP removed.", "success")
+
+    if cascaded_confirmed_partner:
+        from ..email import send_partner_cancelled_email
+        send_partner_cancelled_email(cascaded_confirmed_partner, event, cancelling_person)
+
+    if unlinked_partner_note:
+        flash(f"Note: {unlinked_partner_note}'s reservation is separate (not linked) "
+             f"and is still confirmed -- remove it separately if that's also wanted.", "info")
 
     if freed_seat:
         from ..waitlist import promote_from_waitlist

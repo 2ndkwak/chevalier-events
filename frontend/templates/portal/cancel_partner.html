@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Cancel reservation — Chevalier Events{% endblock %}
+
+{% block content %}
+<div style="max-width:440px; margin:3rem auto;">
+  <div class="card">
+    <div style="text-align:center; margin-bottom:1.5rem;">
+      <img src="{{ url_for('static', filename='img/Chevalier_Logo.jpg') }}"
+           alt="Chevalier Logo" style="height:72px; margin-bottom:1rem;">
+
+      {% if already_resolved %}
+        <div style="font-size:2rem; color:var(--success);">✓</div>
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          Already cancelled
+        </h1>
+        <p class="text-muted text-sm">
+          {{ rsvp.person.display_name }}'s reservation for {{ event.title }} has already
+          been cancelled.
+        </p>
+
+      {% elif expired %}
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          This link has expired
+        </h1>
+        <p class="text-muted text-sm">
+          This cancellation link is more than 7 days old. If you still need to cancel
+          {{ rsvp.person.display_name }}'s reservation for {{ event.title }}, please
+          contact us directly.
+        </p>
+
+      {% else %}
+        <h1 style="font-size:1.3rem; color:var(--burgundy); margin:.3rem 0;">
+          Cancel {{ rsvp.person.display_name }}'s reservation?
+        </h1>
+        <p class="text-muted text-sm">
+          {{ event.title }} — {{ event.event_date.strftime("%A, %B %d, %Y") }}
+        </p>
+      {% endif %}
+    </div>
+
+    {% if not already_resolved and not expired %}
+    <form method="POST">
+      <button type="submit" class="btn btn-primary" style="width:100%;">
+        Yes, cancel this reservation
+      </button>
+    </form>
+    {% else %}
+    <a href="{{ url_for('portal.home') }}" class="btn btn-outline" style="width:100%; text-align:center;">
+      Go to the portal
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
