@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required
 from ..routes.admin import admin_required
+from ..table_geometry import rectangular_end_seat_numbers
 
 table_planner_bp = Blueprint("table_planner", __name__)
 
@@ -199,7 +200,13 @@ def save_custom_config():
             if end == "one":
                 entry["eliminated_seats"] = [1]
             elif end == "both":
-                entry["eliminated_seats"] = [1, size]
+                # The second end seat is NOT always seat `size` -- see
+                # table_geometry.py for why. Using `size` directly was
+                # the original bug: for any table with seats on both
+                # long sides (size >= 4), it eliminated an ordinary side
+                # seat instead of the true second end.
+                end1, end2 = rectangular_end_seat_numbers(size)
+                entry["eliminated_seats"] = [end1, end2]
 
         tables.append(entry)
         table_num += 1
