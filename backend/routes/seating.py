@@ -701,6 +701,18 @@ def print_seating(event_id):
     tables_meta = sorted(event.table_config["tables"], key=lambda t: t["id"])
     guest_count = sum(1 for s in seats if s["is_guest"])
 
+    # Form 1 (visual circular chart) only makes sense for round tables of
+    # 6-8 seats -- the layout math assumes a circle. Custom Table Plan
+    # configs (rectangular tables, or round tables outside 6-8) gate this
+    # form off entirely rather than render a misleading chart. Legacy
+    # configs have no "shape" key at all (pre-dates Custom Table Plan) --
+    # treated as "round" for backward compatibility, same fallback used
+    # in table_planner.py's custom_planner().
+    visual_chart_available = all(
+        t.get("shape", "round") == "round" and 6 <= t["size"] <= 8
+        for t in tables_meta
+    )
+
     booklet_current, booklet_stale_because = event.booklet_is_current()
     table_cards_current, table_cards_stale_because = event.table_cards_is_current()
     charts_current, charts_stale_because = event.charts_is_current()
@@ -720,6 +732,7 @@ def print_seating(event_id):
         alpha       = alpha,
         tables_meta = tables_meta,
         guest_count = guest_count,
+        visual_chart_available = visual_chart_available,
         now         = datetime.now().strftime("%B %d, %Y"),
         booklet_current = booklet_current,
         booklet_stale_because = booklet_stale_because,

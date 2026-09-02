@@ -532,6 +532,7 @@
     <div class="report-title">Seating Chart</div>
   </div>
 
+  {% if visual_chart_available %}
   <div class="chart-grid" id="chart-grid">
     {% for t in tables_meta %}
     {% set t_seats = by_table.get(t.id, []) %}
@@ -567,6 +568,11 @@
     <span style="background:var(--allergy-bg);border:1px solid var(--allergy-bd);padding:0 4px;border-radius:3px;">⚠ allergy / dietary note</span>
     &nbsp;·&nbsp; Printed {{ now }}
   </div>
+  {% else %}
+  <div style="padding:2rem 0; text-align:center; font-family:sans-serif; color:var(--ink-muted);">
+    Not available for this event's table configuration
+  </div>
+  {% endif %}
 </div>
 </div>
 
