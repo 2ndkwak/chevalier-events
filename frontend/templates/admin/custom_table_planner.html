@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Custom Table Plan — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Custom Table Plan{% if event %} — {{ event.title }}{% endif %}</h1>
+  {% if event %}
+    <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">
+      ← Back to {{ event.title }}
+    </a>
+  {% endif %}
+</div>
+
+{% if existing_mode == 'standard' %}
+<div class="card" style="border-top-color:var(--gold); max-width:640px;">
+  <p class="text-sm">
+    This event currently has a <strong>Standard</strong> table plan.
+    Saving here will replace it with a Custom table plan.
+  </p>
+</div>
+{% endif %}
+
+<div class="card" style="max-width:900px;">
+  <div class="card-title">Tables</div>
+
+  <form method="POST" id="custom-table-form"
+        action="{{ url_for('table_planner.save_custom_config') }}">
+    <input type="hidden" name="event_id" value="{{ event.id }}">
+
+    <table class="data-table" id="tables-table">
+      <thead>
+        <tr>
+          <th style="width:26%;">Table label</th>
+          <th style="width:20%;">Shape</th>
+          <th style="width:14%;">Size</th>
+          <th style="width:22%;">Ends eliminated</th>
+          <th style="width:18%;"></th>
+        </tr>
+      </thead>
+      <tbody id="tables-tbody">
+        {% for t in tables %}
+        <tr class="table-row">
+          <td><input type="text" name="table_label[]" value="{{ t.label }}" required></td>
+          <td>
+            <select name="table_shape[]" class="shape-select" onchange="onShapeChange(this)">
+              <option value="round" {% if t.shape == 'round' %}selected{% endif %}>Round</option>
+              <option value="rectangular" {% if t.shape == 'rectangular' %}selected{% endif %}>Rectangular</option>
+            </select>
+          </td>
+          <td><input type="number" name="table_size[]" min="2" max="99" value="{{ t.size }}" required
+                      oninput="updateTotal()"></td>
+          <td>
+            {% set el = t.eliminated_seats or [] %}
+            <select name="table_eliminated[]" class="eliminated-select"
+                    {% if t.shape != 'rectangular' %}disabled{% endif %}>
+              <option value="none" {% if el|length == 0 %}selected{% endif %}>None</option>
+              <option value="one"  {% if el|length == 1 %}selected{% endif %}>One</option>
+              <option value="both" {% if el|length == 2 %}selected{% endif %}>Both</option>
+            </select>
+          </td>
+          <td>
+            <button type="button" class="btn btn-outline btn-sm" onclick="removeRow(this)">Remove</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:1rem;">
+      <button type="button" class="btn btn-outline btn-sm" onclick="addRow()">+ Add Table</button>
+      <span id="running-total" class="text-muted text-sm"></span>
+    </div>
+
+    <div style="margin-top:1.5rem;">
+      <button type="submit" class="btn btn-primary"
+              data-existing-mode="{{ existing_mode or '' }}"
+              onclick="return confirmSave(this)">
+        Save Custom Table Plan
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Row template, kept out of the tbody so it's never submitted -->
+<template id="row-template">
+  <tr class="table-row">
+    <td><input type="text" name="table_label[]" value="" required></td>
+    <td>
+      <select name="table_shape[]" class="shape-select" onchange="onShapeChange(this)">
+        <option value="round" selected>Round</option>
+        <option value="rectangular">Rectangular</option>
+      </select>
+    </td>
+    <td><input type="number" name="table_size[]" min="2" max="99" value="8" required
+                oninput="updateTotal()"></td>
+    <td>
+      <select name="table_eliminated[]" class="eliminated-select" disabled>
+        <option value="none" selected>None</option>
+        <option value="one">One</option>
+        <option value="both">Both</option>
+      </select>
+    </td>
+    <td>
+      <button type="button" class="btn btn-outline btn-sm" onclick="removeRow(this)">Remove</button>
+    </td>
+  </tr>
+</template>
+
+<script>
+function addRow() {
+  var tpl = document.getElementById('row-template');
+  var row = tpl.content.firstElementChild.cloneNode(true);
+  document.getElementById('tables-tbody').appendChild(row);
+  renumberLabels();
+  updateTotal();
+}
+
+function removeRow(btn) {
+  var row = btn.closest('tr');
+  row.parentNode.removeChild(row);
+  updateTotal();
+}
+
+function onShapeChange(select) {
+  var row = select.closest('tr');
+  var elimSelect = row.querySelector('.eliminated-select');
+  if (select.value === 'rectangular') {
+    elimSelect.disabled = false;
+  } else {
+    elimSelect.disabled = true;
+    elimSelect.value = 'none';
+  }
+}
+
+function renumberLabels() {
+  // Only fills in a sensible default label for newly-added blank rows --
+  // never overwrites a label the user already typed.
+  var rows = document.querySelectorAll('#tables-tbody .table-row');
+  rows.forEach(function (row, i) {
+    var input = row.querySelector('input[name="table_label[]"]');
+    if (!input.value) {
+      input.value = 'Table ' + (i + 1);
+    }
+  });
+}
+
+function updateTotal() {
+  var rows = document.querySelectorAll('#tables-tbody .table-row');
+  var seats = 0;
+  rows.forEach(function (row) {
+    var sizeInput = row.querySelector('input[name="table_size[]"]');
+    var n = parseInt(sizeInput.value, 10);
+    if (!isNaN(n)) seats += n;
+  });
+  document.getElementById('running-total').textContent =
+    rows.length + ' table' + (rows.length !== 1 ? 's' : '') +
+    ' · ' + seats + ' seats configured';
+}
+
+function confirmSave(btn) {
+  var mode = btn.getAttribute('data-existing-mode');
+  if (mode === 'standard') {
+    return confirm('This event already has a Standard table plan — replace it with this Custom plan?');
+  }
+  return true;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  if (document.querySelectorAll('#tables-tbody .table-row').length === 0) {
+    addRow();
+  }
+  updateTotal();
+});
+</script>
+
+{% endblock %}

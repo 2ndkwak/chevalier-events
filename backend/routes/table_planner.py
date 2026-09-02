@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required
 from ..routes.admin import admin_required
 
@@ -106,11 +106,103 @@ def save_config():
     for _ in range(sixes):
         tables.append({"id": t, "size": 6, "label": f"Table {t}"}); t += 1
 
-    event.table_config = {"tables": tables}
+    event.table_config = {"mode": "standard", "tables": tables}
     db.session.commit()
 
-    from flask import flash, redirect, url_for
     flash(f"Table configuration saved to '{event.title}': "
           f"{eights} x 8-top, {sevens} x 7-top, {sixes} x 6-top "
           f"({eights+sevens+sixes} tables).", "success")
+    return redirect(url_for("events.edit_event", event_id=event_id))
+
+
+@table_planner_bp.route("/custom", methods=["GET"])
+@login_required
+@admin_required
+def custom_planner():
+    """Custom Table Plan editor: label / shape / size / eliminated ends
+    per table, no 6-8 constraint. Separate save path from solve_tables()
+    and the Standard planner above -- does not touch either."""
+    from ..models import Event
+
+    event_id = request.args.get("event_id", type=int)
+    if not event_id:
+        return "No event specified", 400
+
+    event = Event.query.get_or_404(event_id)
+
+    existing = event.table_config or {}
+    existing_mode = existing.get("mode")
+    if existing_mode is None and existing.get("tables"):
+        # Pre-existing config saved before the mode field was introduced --
+        # only the Standard planner ever wrote table_config until now.
+        existing_mode = "standard"
+
+    tables = existing.get("tables", []) if existing_mode == "custom" else []
+
+    return render_template("admin/custom_table_planner.html",
+                           event=event,
+                           tables=tables,
+                           existing_mode=existing_mode)
+
+
+@table_planner_bp.route("/custom/save", methods=["POST"])
+@login_required
+@admin_required
+def save_custom_config():
+    """Save a Custom Table Plan: label/shape/size/eliminated-ends per table.
+    One-directional export sync to Table Layout Management is fired here
+    once that module exists (Part 2) -- no-op today if it doesn't."""
+    from ..models import db, Event
+
+    event_id = request.form.get("event_id", type=int)
+    if not event_id:
+        return "No event specified", 400
+
+    event = Event.query.get_or_404(event_id)
+
+    labels = request.form.getlist("table_label[]")
+    shapes = request.form.getlist("table_shape[]")
+    sizes  = request.form.getlist("table_size[]")
+    ends   = request.form.getlist("table_eliminated[]")  # "none" | "one" | "both"
+
+    tables = []
+    table_num = 1
+    for label, shape, size_raw, end in zip(labels, shapes, sizes, ends):
+        try:
+            size = int(size_raw)
+        except (TypeError, ValueError):
+            continue
+        if size < 1:
+            continue
+
+        shape = shape if shape in ("round", "rectangular") else "round"
+        label = (label or f"Table {table_num}").strip() or f"Table {table_num}"
+
+        entry = {"id": table_num, "label": label, "size": size, "shape": shape}
+        if shape == "rectangular":
+            if end == "one":
+                entry["eliminated_seats"] = [1]
+            elif end == "both":
+                entry["eliminated_seats"] = [1, size]
+
+        tables.append(entry)
+        table_num += 1
+
+    if not tables:
+        flash("No valid tables submitted -- nothing saved.", "error")
+        return redirect(url_for("table_planner.custom_planner", event_id=event_id))
+
+    event.table_config = {"mode": "custom", "tables": tables}
+    db.session.commit()
+
+    flash(f"Custom table plan saved to '{event.title}': "
+          f"{len(tables)} table{'s' if len(tables) != 1 else ''}, "
+          f"{sum(t['size'] for t in tables)} seats configured.", "success")
+
+    try:
+        from . import table_layout
+        table_layout.sync_tables_for_event(event_id, tables)
+    except ImportError:
+        pass  # Table Layout Management module not yet built (Part 2)
+
     return redirect(url_for("events.edit_event", event_id=event_id))

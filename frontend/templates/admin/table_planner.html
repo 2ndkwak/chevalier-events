@@ -146,7 +146,10 @@
         <input type="hidden" name="eights"   value="{{ s.eights }}">
         <input type="hidden" name="sevens"   value="{{ s.sevens }}">
         <input type="hidden" name="sixes"    value="{{ s.sixes }}">
-        <button type="submit" class="btn {% if loop.first %}btn-primary{% else %}btn-outline{% endif %} btn-sm">
+        <button type="submit" class="btn {% if loop.first %}btn-primary{% else %}btn-outline{% endif %} btn-sm"
+                {% if event.table_config and event.table_config.get('mode') == 'custom' %}
+                onclick="return confirm('This event already has a Custom table plan — replace it with this Standard layout?');"
+                {% endif %}>
           Use this layout for {{ event.title }}
         </button>
       </form>

@@ -73,7 +73,9 @@
         </form>
       {% endif %}
       <a href="{{ url_for('table_planner.planner', event_id=event.id) }}"
-         class="btn btn-outline btn-sm">[+] Plan tables</a>
+         class="btn btn-outline btn-sm">Standard Table Plan</a>
+      <a href="{{ url_for('table_planner.custom_planner', event_id=event.id) }}"
+         class="btn btn-outline btn-sm">Custom Table Plan</a>
       <a href="{{ url_for('seating.seating_home', event_id=event.id) }}"
          class="btn btn-outline btn-sm">Seating</a>
       <a href="{{ url_for('events.rsvp_list', event_id=event.id) }}"
