@@ -115,6 +115,24 @@
     border-color: var(--gold);
     background: #fffbef;
   }
+  .seat-slot.eliminated {
+    border-style: dashed;
+    border-color: var(--parchment-md);
+    background: repeating-linear-gradient(
+      45deg, var(--parchment), var(--parchment) 6px,
+      var(--parchment-md) 6px, var(--parchment-md) 7px
+    );
+    opacity: .55;
+    cursor: default;
+  }
+  .seat-slot.eliminated-conflict {
+    /* Someone is seated in a seat that's since been eliminated -- flag
+       for the GS to resolve, don't just silently render it normally. */
+    border-style: solid;
+    border-color: var(--danger);
+    background: #fff3f0;
+    opacity: 1;
+  }
   .seat-num {
     font-size: .62rem;
     color: var(--ink-muted);
@@ -575,6 +593,10 @@ function genderColor(gender) {
   if (gender === 'F') return '#C4637A';   // rose
   return '#7A6650';                        // neutral grey
 }
+function eliminatedSeats(tnum) {
+  const t = TABLE_CFG.tables.find(t => t.id === tnum);
+  return (t && t.eliminated_seats) || [];
+}
 
 // ── Init canvas state from assignments ───────────────────────────────────────
 function initState() {
@@ -608,6 +630,8 @@ function renderTables() {
     const tnum = t.id;
     const label = t.label || `Table ${tnum}`;
     const size  = t.size;
+    const eliminated = eliminatedSeats(tnum);
+    const realCapacity = size - eliminated.length;
     const occupied = Object.values(canvas[tnum]).filter(Boolean).length;
 
     const card = document.createElement('div');
@@ -615,7 +639,7 @@ function renderTables() {
     card.innerHTML = `
       <div class="table-card-header">
         <span class="table-label">${label}</span>
-        <span class="table-count">${occupied} / ${size} seats filled</span>
+        <span class="table-count">${occupied} / ${realCapacity} seats filled</span>
       </div>
       <div class="seats-grid" id="table-${tnum}-seats"></div>
     `;
@@ -635,6 +659,30 @@ function renderSeat(tnum, snum) {
   slot.dataset.seat  = snum;
 
   const occ = canvas[tnum][snum];
+  const isEliminated = eliminatedSeats(tnum).includes(snum);
+
+  // Eliminated seat (Custom Table Plan) with NO existing occupant --
+  // visible gap, never a drop target. No dragover/drop listeners
+  // attached at all, so a manual drop here is refused by construction,
+  // not by a runtime check that could be missed elsewhere. Table
+  // footprint/seat count is otherwise unchanged; this just never
+  // renders as assignable.
+  if (isEliminated && !occ) {
+    slot.classList.add('eliminated');
+    slot.innerHTML = `<span class="seat-num">—</span>`;
+    return slot;
+  }
+
+  // Eliminated seat that DOES have a pre-existing occupant (e.g. the
+  // table shape was edited to eliminate this seat after someone was
+  // already seated there) -- don't silently hide them from the canvas
+  // while their SeatAssignment row still exists in the database. Shown
+  // as a flagged conflict the GS can resolve (drag them out, or
+  // unassign), rather than a normal seat or an invisible gap. Still no
+  // drop target, so nothing new can land here while this is unresolved.
+  if (isEliminated && occ) {
+    slot.classList.add('eliminated', 'eliminated-conflict');
+  }
 
   if (occ) {
     const p = findPerson(occ.person_id, occ.guest_id);
@@ -680,10 +728,13 @@ function renderSeat(tnum, snum) {
     slot.innerHTML = `<span class="seat-num">${snum}</span>`;
   }
 
-  // Drop target on every slot
-  slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
-  slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
-  slot.addEventListener('drop', e => {
+  // Drop target on every slot EXCEPT an eliminated one -- whether or not
+  // it currently has a conflict occupant, nothing new should be droppable
+  // into a seat that shouldn't exist.
+  if (!isEliminated) {
+    slot.addEventListener('dragover', e => { e.preventDefault(); slot.classList.add('drag-over'); });
+    slot.addEventListener('dragleave', () => slot.classList.remove('drag-over'));
+    slot.addEventListener('drop', e => {
     e.preventDefault();
     slot.classList.remove('drag-over');
     if (!dragPayload) return;
@@ -718,6 +769,7 @@ function renderSeat(tnum, snum) {
     markDirty();
     render();
   });
+  }
 
   return slot;
 }

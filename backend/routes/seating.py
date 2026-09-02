@@ -285,7 +285,7 @@ def propose_seating(event_id):
             print(f"DEBUG - extracted (first 500): {extracted[:500]}")
             print(f"DEBUG - extracted (last 200): {extracted[-200:]}")
             raise
-        _apply_proposal(event_id, proposal, locked)
+        skipped = _apply_proposal(event_id, proposal, locked)
         fixes = _enforce_rules(event_id, couples)
         msg = "Seating proposal generated successfully. Review and adjust as needed."
         details = []
@@ -296,6 +296,12 @@ def propose_seating(event_id):
         if details:
             msg += " (Auto-fixed: " + "; ".join(details) + ".)"
         flash(msg, "success")
+        if skipped:
+            flash(f"The AI tried to seat {skipped} attendee(s) in a seat that "
+                  f"doesn't exist at this event's custom table plan (an "
+                  f"eliminated seat) -- they were left unassigned rather than "
+                  f"seated incorrectly. Check the Unassigned Guests list and "
+                  f"place them manually.", "error")
 
     except json.JSONDecodeError as e:
         flash(f"AI returned an unexpected format. Please try again. ({e})", "error")
@@ -1829,6 +1835,25 @@ def _get_seating_history(current_event_id, limit=3):
     return history
 
 
+def _table_config_line(t):
+    """One line describing a table for an AI prompt -- states real usable
+    seat count (size minus eliminated seats), not raw size, and names the
+    eliminated seat numbers explicitly, so the AI doesn't try to seat
+    someone in a seat that doesn't physically exist. A no-op wording
+    change for every standard event (no eliminated_seats present)."""
+    eliminated = t.get("eliminated_seats") or []
+    size = t["size"]
+    label = t.get("label", "Table " + str(t["id"]))
+    if not eliminated:
+        return f"  Table {t['id']}: {size} seats (label: {label})"
+    usable = size - len(eliminated)
+    eliminated_str = ", ".join(str(s) for s in sorted(eliminated))
+    return (f"  Table {t['id']}: {usable} usable seats out of {size} total "
+            f"(label: {label}) -- seat number(s) {eliminated_str} do NOT "
+            f"exist at this table (physically removed); never assign anyone "
+            f"to seat number(s) {eliminated_str} here")
+
+
 def _build_prompt(event, attendees, couples, history, locked):
     """Build the natural-language prompt sent to the AI."""
     tables = event.table_config.get("tables", [])
@@ -1909,7 +1934,7 @@ def _build_prompt(event, attendees, couples, history, locked):
 You are seating {len(attendees)} guests at {len(tables)} tables for '{event.title}'.
 
 TABLE CONFIGURATION:
-{chr(10).join(f"  Table {t['id']}: {t['size']} seats (label: {t.get('label','Table '+str(t['id']))})" for t in tables)}
+{chr(10).join(_table_config_line(t) for t in tables)}
 
 ATTENDEES:
 {chr(10).join(attendee_lines)}
@@ -2153,7 +2178,7 @@ for '{event.title}'. A party is already a fixed unit -- do NOT split a party acr
 assign individual seats. Only decide which TABLE each party goes to.
 
 TABLE CONFIGURATION:
-{chr(10).join(f"  Table {t['id']}: {t['size']} seats (label: {t.get('label','Table '+str(t['id']))})" for t in tables)}
+{chr(10).join(_table_config_line(t) for t in tables)}
 
 PARTIES:
 {chr(10).join(party_lines)}
@@ -2402,6 +2427,11 @@ def _assign_seats_from_party_tables(event_id, parties, party_table, locked):
 
     event = Event.query.get(event_id)
     tables_cfg = {t["id"]: t["size"] for t in (event.table_config or {}).get("tables", [])}
+    # Eliminated seats (Custom Table Plan) must never be assigned into --
+    # a small, additive exclusion that's a no-op for every table without
+    # any (i.e. every standard 6-8 event, always).
+    eliminated_by_table = {t["id"]: set(t.get("eliminated_seats", []))
+                           for t in (event.table_config or {}).get("tables", [])}
 
     SeatAssignment.query.filter_by(event_id=event_id, is_locked=False).delete()
     db.session.flush()
@@ -2434,7 +2464,8 @@ def _assign_seats_from_party_tables(event_id, parties, party_table, locked):
     for tnum, table_parties in parties_by_table.items():
         size = tables_cfg.get(tnum, 8)
         taken = occupied_by_table.get(tnum, set())
-        free_seats = [s for s in range(1, size + 1) if s not in taken]
+        eliminated = eliminated_by_table.get(tnum, set())
+        free_seats = [s for s in range(1, size + 1) if s not in taken and s not in eliminated]
 
         # Interleave: place the "first" occupant of every party before the
         # "second" occupant of any party, which naturally spreads couples
@@ -2541,13 +2572,34 @@ def _assign_seats_from_party_tables(event_id, parties, party_table, locked):
 
 
 def _apply_proposal(event_id, proposal, locked):
-    """Write AI proposal to SeatAssignment table, preserving locked seats."""
+    """Write AI proposal to SeatAssignment table, preserving locked seats.
+
+    Never trusts the AI's seat_num blindly -- a model response is external
+    input and must be validated at the point of writing, not just steered
+    via prompt instructions it could still get wrong (see
+    _table_config_line for what the AI is told). Two checks: the seat must
+    be within the table's actual 1..size range (a pre-existing gap, never
+    validated before tonight), and it must not be one of the table's
+    eliminated seats (new tonight, Part 1.5). Either failure means that
+    proposal entry is skipped rather than written; that person is left
+    unassigned (visible in the Seating page's "Unassigned Guests" panel)
+    rather than silently seated somewhere that doesn't exist. Returns the
+    count of skipped entries so the caller can flash a warning.
+    """
+    from ..models import Event
+    event = Event.query.get(event_id)
+    tables_cfg = {t["id"]: t["size"] for t in (event.table_config or {}).get("tables", [])}
+    eliminated_by_table = {t["id"]: set(t.get("eliminated_seats", []))
+                           for t in (event.table_config or {}).get("tables", [])}
+
     # Delete all unlocked assignments for this event
     SeatAssignment.query.filter_by(event_id=event_id, is_locked=False).delete()
     db.session.flush()
 
+    skipped = 0
     for table in proposal.get("tables", []):
         tnum = table["table_num"]
+        eliminated = eliminated_by_table.get(tnum, set())
         for seat in table.get("seats", []):
             snum    = seat["seat_num"]
             pid     = seat.get("person_id")
@@ -2566,6 +2618,24 @@ def _apply_proposal(event_id, proposal, locked):
             if (tnum, snum) in locked:
                 continue
 
+            table_size = tables_cfg.get(tnum)
+
+            # Skip -- and don't write -- if the AI proposed a seat number
+            # outside the table's actual range, or an eliminated seat
+            # despite being told not to. Pre-existing gap for the range
+            # check (never validated before); the eliminated-seat check is
+            # new tonight. Both are the same underlying issue: a model
+            # response is external input and must be validated at the
+            # point of writing, not just steered via prompt instructions
+            # it could still get wrong. The person stays unassigned rather
+            # than being seated somewhere that doesn't exist.
+            invalid_range = table_size is not None and not (1 <= snum <= table_size)
+            invalid_eliminated = snum in eliminated
+            if invalid_range or invalid_eliminated:
+                if pid or gid:
+                    skipped += 1
+                continue
+
             if pid or gid:
                 sa = SeatAssignment(
                     event_id  = event_id,
@@ -2578,6 +2648,7 @@ def _apply_proposal(event_id, proposal, locked):
                 db.session.add(sa)
 
     db.session.commit()
+    return skipped
 
 
 def _enforce_rules(event_id, couples_data):
@@ -2693,8 +2764,9 @@ def _enforce_rules(event_id, couples_data):
                 table_cfg = next((t for t in (event.table_config or {}).get("tables", [])
                                   if t["id"] == tnum_to), None)
                 table_size = table_cfg["size"] if table_cfg else 12
+                eliminated_to = set(table_cfg.get("eliminated_seats", [])) if table_cfg else set()
                 for snum in range(1, table_size + 1):
-                    if snum not in occupied_to:
+                    if snum not in occupied_to and snum not in eliminated_to:
                         officer_sa.table_num = tnum_to
                         officer_sa.seat_num = snum
                         fixes["officers_spread"] += 1
@@ -2726,6 +2798,8 @@ def _enforce_rules(event_id, couples_data):
     event = Event.query.get(event_id)
     not_together_pairs = (event.seating_rules or {}).get("not_together") or []
     table_sizes = {t["id"]: t["size"] for t in (event.table_config or {}).get("tables", [])}
+    eliminated_by_table = {t["id"]: set(t.get("eliminated_seats", []))
+                           for t in (event.table_config or {}).get("tables", [])}
 
     def _seated_with_partner(sa):
         return _party_mate_seated_at(sa.person_id, sa.table_num, all_sa)
@@ -2756,7 +2830,9 @@ def _enforce_rules(event_id, couples_data):
             occupied = {sa.seat_num for sa in tables.get(tnum, [])}
             if len(occupied) >= size:
                 continue
-            free_seat = next((s for s in range(1, size + 1) if s not in occupied), None)
+            eliminated = eliminated_by_table.get(tnum, set())
+            free_seat = next((s for s in range(1, size + 1)
+                              if s not in occupied and s not in eliminated), None)
             if free_seat is None:
                 continue
             if mover in tables.get(current_table, []):
@@ -2812,9 +2888,11 @@ def _enforce_rules(event_id, couples_data):
     couples_adjacent_active = _rule_active("couples_non_adjacent")
     gender_active = _rule_active("alternate_genders")
 
-    # Tables are always round (Table Planner only ever builds round tables),
-    # so seat 1 and the last seat are physical neighbors too, not just
-    # consecutively-numbered seats -- this wraparound pair was previously
+    # Seats are numbered by walking the table's perimeter -- walking a
+    # rectangle's perimeter and a circle's perimeter are the same
+    # operation (see table_geometry.py), so seat 1 and the last seat are
+    # physical neighbors for BOTH round and rectangular tables, not just
+    # consecutively-numbered seats. This wraparound pair was previously
     # missed everywhere adjacency was checked in this file.
     def _table_violation_counts(table_sas, table_size):
         def _is_adjacent(s1, s2):
