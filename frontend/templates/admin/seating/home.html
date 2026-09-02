@@ -199,6 +199,16 @@
   <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">← Back to event</a>
 </div>
 
+{% if event.table_config and event.table_config.get('mode') == 'custom' %}
+<div class="card" style="border-top-color:var(--gold); padding:.8rem 1.2rem; margin-bottom:1.2rem;
+            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.8rem;">
+  <span class="text-sm">This event uses a custom table plan.</span>
+  <a href="{{ url_for('table_layout.editor', event_id=event.id) }}" class="btn btn-outline btn-sm">
+    Go to Table Layout Management →
+  </a>
+</div>
+{% endif %}
+
 <!-- Status bar -->
 <div class="card" style="border-top-color:var(--gold); padding:1rem 1.5rem; margin-bottom:1.5rem;">
   <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">

@@ -115,16 +115,29 @@ def sync_tables_for_event(event_id, tables):
 @login_required
 @admin_required
 def editor(event_id):
-    """Full-screen layout editor. Placeholder pending Part 2.4's canvas --
-    lists tables and their current x/y/rotation so the data layer can be
-    exercised and verified before the drag/zoom/rotate UI is built."""
+    """Full-screen layout editor: SVG canvas with drag, snap-to-grid,
+    snap-angle rotation, zoom/pan, fit-to-view, and save (Part 2.4)."""
     from ..models import Event, TableArrangement
 
     event = Event.query.get_or_404(event_id)
-    arrangements = (TableArrangement.query
-                     .filter_by(event_id=event_id)
-                     .order_by(TableArrangement.table_num)
-                     .all())
+    rows = (TableArrangement.query
+             .filter_by(event_id=event_id)
+             .order_by(TableArrangement.table_num)
+             .all())
+
+    # Plain dicts, not model objects -- Jinja's |tojson needs JSON-
+    # serializable data to embed for the canvas JS to consume.
+    arrangements = [{
+        "table_num": r.table_num,
+        "label": r.label,
+        "shape": r.shape,
+        "seats": r.seats,
+        "eliminated_seats": r.eliminated_seats or [],
+        "x": r.x,
+        "y": r.y,
+        "rotation": r.rotation,
+        "changed_since_sync": r.changed_since_sync,
+    } for r in rows]
 
     return render_template("admin/table_layout_editor.html",
                            event=event,
@@ -162,6 +175,10 @@ def save(event_id):
             row.y = p["y"]
         if "rotation" in p:
             row.rotation = p["rotation"]
+        # Saving a table's position is how the GS acknowledges a change --
+        # clear the "changed since sync" marker for any table included in
+        # this save (2.2: screen-only indicator, cleared once reviewed).
+        row.changed_since_sync = False
         updated += 1
 
     db.session.commit()
@@ -177,10 +194,21 @@ def print_layout(event_id):
     from ..models import Event, TableArrangement
 
     event = Event.query.get_or_404(event_id)
-    arrangements = (TableArrangement.query
-                     .filter_by(event_id=event_id)
-                     .order_by(TableArrangement.table_num)
-                     .all())
+    rows = (TableArrangement.query
+             .filter_by(event_id=event_id)
+             .order_by(TableArrangement.table_num)
+             .all())
+
+    arrangements = [{
+        "table_num": r.table_num,
+        "label": r.label,
+        "shape": r.shape,
+        "seats": r.seats,
+        "eliminated_seats": r.eliminated_seats or [],
+        "x": r.x,
+        "y": r.y,
+        "rotation": r.rotation,
+    } for r in rows]
 
     return render_template("admin/table_layout_print.html",
                            event=event,

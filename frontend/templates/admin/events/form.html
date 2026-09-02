@@ -78,6 +78,10 @@
          class="btn btn-outline btn-sm">Custom Table Plan</a>
       <a href="{{ url_for('seating.seating_home', event_id=event.id) }}"
          class="btn btn-outline btn-sm">Seating</a>
+      {% if event.table_config and event.table_config.get('mode') == 'custom' %}
+      <a href="{{ url_for('table_layout.editor', event_id=event.id) }}"
+         class="btn btn-outline btn-sm">Table Layout Management</a>
+      {% endif %}
       <a href="{{ url_for('events.rsvp_list', event_id=event.id) }}"
          class="btn btn-outline btn-sm">View RSVPs ({{ event.confirmed_count }})</a>
     </div>

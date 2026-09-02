@@ -11,56 +11,62 @@
   {% endif %}
 </div>
 
-<div class="card" style="max-width:640px;">
-  <p class="text-sm text-muted">
-    The drag-and-drop canvas (positioning, rotation, zoom/pan) is not built
-    yet -- this is a data-only placeholder so the Custom Table Plan export
-    can be verified end to end. Table shape, size, and label below are kept
-    in sync from the Custom Table Plan; no guest or seating data is stored
-    or shown here.
-  </p>
+<div class="card" style="border-top-color:var(--gold); padding:.8rem 1.2rem; margin-bottom:1.2rem;
+            display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.8rem;">
+  <span class="text-sm">Need to assign guests to seats?</span>
+  <a href="{{ url_for('seating.seating_home', event_id=event.id) }}" class="btn btn-outline btn-sm">
+    Go to Seating →
+  </a>
 </div>
 
-<div class="card" style="max-width:900px;">
-  <div class="card-title">Tables</div>
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Table</th>
-        <th>Label</th>
-        <th>Shape</th>
-        <th>Seats</th>
-        <th>Position (x, y)</th>
-        <th>Rotation</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for a in arrangements %}
-      <tr>
-        <td>{{ a.table_num }}</td>
-        <td>{{ a.label }}</td>
-        <td>{{ a.shape|capitalize }}</td>
-        <td>{{ a.seats }}</td>
-        <td>{{ "%.0f"|format(a.x) }}, {{ "%.0f"|format(a.y) }}</td>
-        <td>{{ "%.0f"|format(a.rotation) }}°</td>
-        <td>
-          {% if a.changed_since_sync %}
-          <span class="badge" style="border:1px solid var(--gold); color:var(--gold);">
-            Changed since last sync
-          </span>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr>
-        <td colspan="7" class="text-muted text-sm">
-          No tables yet -- save a Custom Table Plan for this event first.
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<div class="card" style="padding:0; overflow:hidden;">
+  <div style="display:flex; align-items:center; gap:.8rem; flex-wrap:wrap;
+              padding:.7rem 1rem; border-bottom:1px solid var(--parchment-md);
+              background:var(--parchment);">
+    <button type="button" id="fit-to-view-btn" class="btn btn-outline btn-sm">Fit to View</button>
+    <button type="button" id="zoom-in-btn" class="btn btn-outline btn-sm">Zoom In</button>
+    <button type="button" id="zoom-out-btn" class="btn btn-outline btn-sm">Zoom Out</button>
+    <span style="width:1px; height:1.2rem; background:var(--parchment-md);"></span>
+    <label style="display:flex; align-items:center; gap:.3rem; font-size:.82rem;">
+      <input type="checkbox" id="snap-grid-toggle" checked> Snap to grid
+    </label>
+    <label style="display:flex; align-items:center; gap:.3rem; font-size:.82rem;">
+      <input type="checkbox" id="snap-angle-toggle" checked> Snap rotation (15°)
+    </label>
+    <span style="margin-left:auto; display:flex; align-items:center; gap:.8rem;">
+      <span id="save-status" style="font-size:.82rem;"></span>
+      <button type="button" id="save-btn" class="btn btn-primary btn-sm">Save Positions</button>
+    </span>
+  </div>
+
+  <svg id="layout-canvas" style="display:block; width:100%; height:70vh; background:var(--white); cursor:grab;">
+    <defs>
+      <pattern id="grid-pattern" width="25" height="25" patternUnits="userSpaceOnUse">
+        <path d="M 25 0 L 0 0 0 25" fill="none" stroke="var(--parchment)" stroke-width="1"/>
+      </pattern>
+    </defs>
+    <rect x="-5000" y="-5000" width="10000" height="10000" fill="url(#grid-pattern)"></rect>
+    <g id="tables-layer"></g>
+  </svg>
 </div>
+
+<p class="text-sm text-muted" style="margin-top:.6rem;">
+  Drag a table to move it. Drag the gold handle to rotate. Scroll to zoom,
+  drag empty space to pan. Nothing is saved until you click
+  <strong>Save Positions</strong>.
+</p>
+
+<script id="table-layout-data" type="application/json">{{ arrangements|tojson }}</script>
+<script>
+  window.TABLE_LAYOUT_CONFIG = {
+    tables: JSON.parse(document.getElementById('table-layout-data').textContent),
+    saveUrl: {{ url_for('table_layout.save', event_id=event.id)|tojson }},
+    gridSize: 25,
+    angleStep: 15,
+  };
+</script>
+<script src="{{ url_for('static', filename='js/table_layout_geometry.js') }}"></script>
+<script src="{{ url_for('static', filename='js/table_layout_render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/table_layout_editor.js') }}"></script>
 
 {% endblock %}

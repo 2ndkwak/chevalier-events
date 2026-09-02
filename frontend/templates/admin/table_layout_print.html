@@ -9,25 +9,50 @@
   {{ event.event_date.strftime('%B %d, %Y') if event.event_date else '' }}
 </p>
 
-<table class="data-table" style="max-width:900px;">
-  <thead>
-    <tr>
-      <th>Table</th>
-      <th>Label</th>
-      <th>Shape</th>
-      <th>Seats</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for a in arrangements %}
-    <tr>
-      <td>{{ a.table_num }}</td>
-      <td>{{ a.label }}</td>
-      <td>{{ a.shape|capitalize }}</td>
-      <td>{{ a.seats }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="card" style="padding:0; overflow:hidden;">
+  <svg id="print-canvas" style="display:block; width:100%; height:80vh; background:var(--white);">
+    <g id="tables-layer"></g>
+  </svg>
+</div>
+
+<style media="print">
+  .page-header a, .btn { display: none !important; }
+  #print-canvas { height: 9in !important; }
+</style>
+
+<script id="table-layout-data" type="application/json">{{ arrangements|tojson }}</script>
+<script src="{{ url_for('static', filename='js/table_layout_geometry.js') }}"></script>
+<script src="{{ url_for('static', filename='js/table_layout_render.js') }}"></script>
+<script>
+  (function () {
+    const tables = JSON.parse(document.getElementById('table-layout-data').textContent);
+    const svg = document.getElementById('print-canvas');
+    const layer = document.getElementById('tables-layer');
+
+    for (const table of tables) {
+      layer.appendChild(TableRender.renderTable(table, { interactive: false }));
+    }
+
+    // Static fit-to-view -- same bounding-radius approach as the editor,
+    // just computed once with no pan/zoom interaction.
+    if (tables.length > 0) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const t of tables) {
+        const footprint = TableGeometry.tableFootprint(t.shape, t.seats);
+        const margin = TableGeometry.seatOffset + 10;
+        const r = t.shape === 'round'
+          ? footprint.radius + margin
+          : Math.hypot(footprint.halfLength + margin, footprint.halfWidth + margin);
+        minX = Math.min(minX, t.x - r);
+        maxX = Math.max(maxX, t.x + r);
+        minY = Math.min(minY, t.y - r);
+        maxY = Math.max(maxY, t.y + r);
+      }
+      const pad = 60;
+      svg.setAttribute('viewBox',
+        `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`);
+    }
+  })();
+</script>
 
 {% endblock %}
