@@ -2,6 +2,13 @@
 {% block title %}Custom Table Plan — Chevalier Events{% endblock %}
 
 {% block content %}
+<style>
+  .eliminated-select-inert {
+    opacity: .55;
+    pointer-events: none;
+    background: var(--parchment, #f0ede6);
+  }
+</style>
 <div class="page-header">
   <h1>Custom Table Plan{% if event %} — {{ event.title }}{% endif %}</h1>
   {% if event %}
@@ -51,8 +58,7 @@
                       oninput="updateTotal()"></td>
           <td>
             {% set el = t.eliminated_seats or [] %}
-            <select name="table_eliminated[]" class="eliminated-select"
-                    {% if t.shape != 'rectangular' %}disabled{% endif %}>
+            <select name="table_eliminated[]" class="eliminated-select {% if t.shape != 'rectangular' %}eliminated-select-inert{% endif %}">
               <option value="none" {% if el|length == 0 %}selected{% endif %}>None</option>
               <option value="one"  {% if el|length == 1 %}selected{% endif %}>One</option>
               <option value="both" {% if el|length == 2 %}selected{% endif %}>Both</option>
@@ -94,7 +100,7 @@
     <td><input type="number" name="table_size[]" min="2" max="99" value="8" required
                 oninput="updateTotal()"></td>
     <td>
-      <select name="table_eliminated[]" class="eliminated-select" disabled>
+      <select name="table_eliminated[]" class="eliminated-select eliminated-select-inert">
         <option value="none" selected>None</option>
         <option value="one">One</option>
         <option value="both">Both</option>
@@ -125,9 +131,9 @@ function onShapeChange(select) {
   var row = select.closest('tr');
   var elimSelect = row.querySelector('.eliminated-select');
   if (select.value === 'rectangular') {
-    elimSelect.disabled = false;
+    elimSelect.classList.remove('eliminated-select-inert');
   } else {
-    elimSelect.disabled = true;
+    elimSelect.classList.add('eliminated-select-inert');
     elimSelect.value = 'none';
   }
 }

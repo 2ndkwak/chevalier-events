@@ -165,6 +165,22 @@ def save_custom_config():
     sizes  = request.form.getlist("table_size[]")
     ends   = request.form.getlist("table_eliminated[]")  # "none" | "one" | "both"
 
+    # Guard against silent data loss: label/shape/size/eliminated are meant
+    # to be four parallel arrays, one entry per table row. If a browser
+    # quirk or a future template change causes one of them to come back
+    # short (e.g. a disabled/unsubmitted field), zip() would silently
+    # truncate to the shortest list and drop trailing tables with no error
+    # -- exactly the kind of silent failure this system's process protocol
+    # exists to catch. Fail loudly instead.
+    lengths = {"table_label[]": len(labels), "table_shape[]": len(shapes),
+               "table_size[]": len(sizes), "table_eliminated[]": len(ends)}
+    if len(set(lengths.values())) > 1:
+        flash(f"Table plan not saved -- form data was inconsistent "
+              f"({', '.join(f'{k}: {v}' for k, v in lengths.items())}). "
+              f"This usually means a browser/JS issue, not a typing mistake -- "
+              f"please try again, and report this if it recurs.", "error")
+        return redirect(url_for("table_planner.custom_planner", event_id=event_id))
+
     tables = []
     table_num = 1
     for label, shape, size_raw, end in zip(labels, shapes, sizes, ends):
