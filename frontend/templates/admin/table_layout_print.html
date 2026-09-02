@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Table Layout — Print — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Table Layout — {{ event.title }}</h1>
+</div>
+<p class="text-sm text-muted" style="margin-top:-.5rem;">
+  {{ event.event_date.strftime('%B %d, %Y') if event.event_date else '' }}
+</p>
+
+<table class="data-table" style="max-width:900px;">
+  <thead>
+    <tr>
+      <th>Table</th>
+      <th>Label</th>
+      <th>Shape</th>
+      <th>Seats</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in arrangements %}
+    <tr>
+      <td>{{ a.table_num }}</td>
+      <td>{{ a.label }}</td>
+      <td>{{ a.shape|capitalize }}</td>
+      <td>{{ a.seats }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% endblock %}

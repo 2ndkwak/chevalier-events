@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Table Layout Management — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Table Layout Management{% if event %} — {{ event.title }}{% endif %}</h1>
+  {% if event %}
+    <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">
+      ← Back to {{ event.title }}
+    </a>
+  {% endif %}
+</div>
+
+<div class="card" style="max-width:640px;">
+  <p class="text-sm text-muted">
+    The drag-and-drop canvas (positioning, rotation, zoom/pan) is not built
+    yet -- this is a data-only placeholder so the Custom Table Plan export
+    can be verified end to end. Table shape, size, and label below are kept
+    in sync from the Custom Table Plan; no guest or seating data is stored
+    or shown here.
+  </p>
+</div>
+
+<div class="card" style="max-width:900px;">
+  <div class="card-title">Tables</div>
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Table</th>
+        <th>Label</th>
+        <th>Shape</th>
+        <th>Seats</th>
+        <th>Position (x, y)</th>
+        <th>Rotation</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in arrangements %}
+      <tr>
+        <td>{{ a.table_num }}</td>
+        <td>{{ a.label }}</td>
+        <td>{{ a.shape|capitalize }}</td>
+        <td>{{ a.seats }}</td>
+        <td>{{ "%.0f"|format(a.x) }}, {{ "%.0f"|format(a.y) }}</td>
+        <td>{{ "%.0f"|format(a.rotation) }}°</td>
+        <td>
+          {% if a.changed_since_sync %}
+          <span class="badge" style="border:1px solid var(--gold); color:var(--gold);">
+            Changed since last sync
+          </span>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="7" class="text-muted text-sm">
+          No tables yet -- save a Custom Table Plan for this event first.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

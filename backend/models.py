@@ -945,3 +945,35 @@ class SeatingRule(db.Model):
     description = db.Column(db.Text)       # human-readable label
     is_active   = db.Column(db.Boolean, default=True, nullable=False)
     created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+# --- TABLE LAYOUT MANAGEMENT ---------------------------------------------------
+# Self-contained venue-layout module: table shapes/positions/rotations only.
+# Deliberately isolated from Person/RSVPGuest/SeatAssignment -- this table
+# has no foreign keys into guest data of any kind, only into Event. Populated
+# one-directionally from table_planner.py's Custom Table Plan save (see
+# sync_tables_for_event() in routes/table_layout.py); never reads or writes
+# any assignment/RSVP table.
+
+class TableArrangement(db.Model):
+    __tablename__ = "table_arrangements"
+
+    id                  = db.Column(db.Integer, primary_key=True)
+    event_id            = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    table_num           = db.Column(db.Integer, nullable=False)
+    label               = db.Column(db.String(200), nullable=False)
+    shape               = db.Column(db.String(20), nullable=False)   # "round" | "rectangular"
+    seats               = db.Column(db.Integer, nullable=False)
+    eliminated_seats    = db.Column(db.JSON, default=list)
+    x                   = db.Column(db.Float, default=0)
+    y                   = db.Column(db.Float, default=0)
+    rotation            = db.Column(db.Float, default=0)             # degrees
+    # Screen-only indicator that this table's shape/size/seats changed since
+    # the GS last opened the layout editor -- never rendered on the print view.
+    changed_since_sync  = db.Column(db.Boolean, default=False, nullable=False)
+
+    event = db.relationship("Event")
+
+    __table_args__ = (
+        db.UniqueConstraint("event_id", "table_num", name="uq_event_table_num"),
+    )

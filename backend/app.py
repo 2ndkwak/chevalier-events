@@ -119,6 +119,7 @@ def create_app(config=None):
     from .routes.members       import members_bp
     from .routes.events        import events_bp
     from .routes.table_planner import table_planner_bp
+    from .routes.table_layout  import table_layout_bp
     from .routes.seating       import seating_bp
     from .routes.import_members import import_bp
     from .routes.portal        import portal_bp
@@ -130,6 +131,7 @@ def create_app(config=None):
     app.register_blueprint(members_bp,        url_prefix="/admin/members")
     app.register_blueprint(events_bp,         url_prefix="/admin/events")
     app.register_blueprint(table_planner_bp,  url_prefix="/admin/tables")
+    app.register_blueprint(table_layout_bp,   url_prefix="/admin/events/<int:event_id>/table-layout")
     app.register_blueprint(seating_bp,        url_prefix="/admin/seating")
     app.register_blueprint(import_bp,         url_prefix="/admin/import")
     app.register_blueprint(portal_bp,         url_prefix="/portal")
