@@ -113,6 +113,8 @@
 </template>
 
 <script>
+const CONFIRMED_COUNT = {{ event.confirmed_count }};
+
 function addRow() {
   var tpl = document.getElementById('row-template');
   var row = tpl.content.firstElementChild.cloneNode(true);
@@ -158,9 +160,24 @@ function updateTotal() {
     var n = parseInt(sizeInput.value, 10);
     if (!isNaN(n)) seats += n;
   });
-  document.getElementById('running-total').textContent =
-    rows.length + ' table' + (rows.length !== 1 ? 's' : '') +
+
+  var summary = rows.length + ' table' + (rows.length !== 1 ? 's' : '') +
     ' · ' + seats + ' seats configured';
+
+  var el = document.getElementById('running-total');
+  var diff = seats - CONFIRMED_COUNT;
+  summary += ' — ' + CONFIRMED_COUNT + ' confirmed';
+  if (diff > 0) {
+    summary += ', ' + diff + ' to spare';
+    el.style.color = 'var(--success)';
+  } else if (diff < 0) {
+    summary += ', ' + (-diff) + ' short';
+    el.style.color = 'var(--danger)';
+  } else {
+    summary += ' — exact fit';
+    el.style.color = 'var(--success)';
+  }
+  el.textContent = summary;
 }
 
 function confirmSave(btn) {
