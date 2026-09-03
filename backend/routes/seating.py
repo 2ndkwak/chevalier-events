@@ -311,6 +311,21 @@ def propose_seating(event_id):
     return redirect(url_for("seating.seating_home", event_id=event_id))
 
 
+def _table_real_capacity(t):
+    """Usable seat count for a table: raw size minus eliminated seats.
+    The single source of truth for this subtraction -- every capacity
+    computation in this file (party-to-table planning, overflow
+    correction, consolidation, the final seat-level placement) should
+    call this rather than reading t["size"] directly, so a future new
+    capacity computation can't reintroduce the gap found this session:
+    _fix_table_overflow() and _consolidate_for_unplaced() both used raw
+    size, over-packing a table with an eliminated seat by exactly the
+    eliminated count and leaving that many people genuinely unplaced at
+    the final step, with no earlier warning. A no-op for every table
+    without eliminated seats (i.e. every standard event, always)."""
+    return t["size"] - len(t.get("eliminated_seats") or [])
+
+
 @seating_bp.route("/event/<int:event_id>/propose_fast", methods=["POST"])
 @login_required
 @admin_required
@@ -349,7 +364,7 @@ def propose_seating_fast(event_id):
     parties, not_together_pairs = _apply_party_rules(parties, rules)
 
     # Sanity check: total party size must fit in total table capacity
-    total_seats = sum(t["size"] for t in tables)
+    total_seats = sum(_table_real_capacity(t) for t in tables)
     total_people = sum(p["size"] for p in parties)
     if total_people > total_seats:
         flash(f"Not enough seats: {total_people} attendees need seating but tables only "
@@ -2240,7 +2255,9 @@ def _fix_table_overflow(parties, party_table, tables, locked):
 
     Effective capacity per table accounts for seats already taken by locked
     assignments -- a table with 8 seats but 2 already locked really only
-    has 6 seats of room for everyone else, not 8.
+    has 6 seats of room for everyone else, not 8 -- and for eliminated
+    seats (Custom Table Plan), which reduce a table's real capacity below
+    its raw size regardless of locks.
 
     Runs iteratively rather than in a single pass, since moving overflow
     off of one table can push another table over capacity in turn --
@@ -2258,7 +2275,8 @@ def _fix_table_overflow(parties, party_table, tables, locked):
     locked_seats_per_table = {}
     for (tnum, _snum) in locked.keys():
         locked_seats_per_table[tnum] = locked_seats_per_table.get(tnum, 0) + 1
-    table_capacity = {t["id"]: t["size"] - locked_seats_per_table.get(t["id"], 0) for t in tables}
+    table_capacity = {t["id"]: _table_real_capacity(t) - locked_seats_per_table.get(t["id"], 0)
+                      for t in tables}
     party_by_id = {p["party_id"]: p for p in parties}
 
     def _load():
@@ -2361,7 +2379,8 @@ def _consolidate_for_unplaced(parties, party_table, tables, unplaced, locked):
     locked_seats_per_table = {}
     for (tnum, _snum) in locked.keys():
         locked_seats_per_table[tnum] = locked_seats_per_table.get(tnum, 0) + 1
-    table_capacity = {t["id"]: t["size"] - locked_seats_per_table.get(t["id"], 0) for t in tables}
+    table_capacity = {t["id"]: _table_real_capacity(t) - locked_seats_per_table.get(t["id"], 0)
+                      for t in tables}
 
     def _load():
         load = {}

@@ -58,7 +58,7 @@
                       oninput="updateTotal()"></td>
           <td>
             {% set el = t.eliminated_seats or [] %}
-            <select name="table_eliminated[]" class="eliminated-select {% if t.shape != 'rectangular' %}eliminated-select-inert{% endif %}">
+            <select name="table_eliminated[]" class="eliminated-select {% if t.shape != 'rectangular' %}eliminated-select-inert{% endif %}" onchange="updateTotal()">
               <option value="none" {% if el|length == 0 %}selected{% endif %}>None</option>
               <option value="one"  {% if el|length == 1 %}selected{% endif %}>One</option>
               <option value="both" {% if el|length == 2 %}selected{% endif %}>Both</option>
@@ -100,7 +100,7 @@
     <td><input type="number" name="table_size[]" min="2" max="99" value="8" required
                 oninput="updateTotal()"></td>
     <td>
-      <select name="table_eliminated[]" class="eliminated-select eliminated-select-inert">
+      <select name="table_eliminated[]" class="eliminated-select eliminated-select-inert" onchange="updateTotal()">
         <option value="none" selected>None</option>
         <option value="one">One</option>
         <option value="both">Both</option>
@@ -138,6 +138,7 @@ function onShapeChange(select) {
     elimSelect.classList.add('eliminated-select-inert');
     elimSelect.value = 'none';
   }
+  updateTotal();
 }
 
 function renumberLabels() {
@@ -154,15 +155,24 @@ function renumberLabels() {
 
 function updateTotal() {
   var rows = document.querySelectorAll('#tables-tbody .table-row');
-  var seats = 0;
+  var rawSeats = 0;
+  var eliminatedCount = 0;
   rows.forEach(function (row) {
     var sizeInput = row.querySelector('input[name="table_size[]"]');
     var n = parseInt(sizeInput.value, 10);
-    if (!isNaN(n)) seats += n;
+    if (!isNaN(n)) rawSeats += n;
+
+    var elimSelect = row.querySelector('.eliminated-select');
+    if (elimSelect.value === 'one') eliminatedCount += 1;
+    else if (elimSelect.value === 'both') eliminatedCount += 2;
   });
+  var seats = rawSeats - eliminatedCount;
 
   var summary = rows.length + ' table' + (rows.length !== 1 ? 's' : '') +
-    ' · ' + seats + ' seats configured';
+    ' · ' + seats + ' usable seat' + (seats !== 1 ? 's' : '') + ' configured';
+  if (eliminatedCount > 0) {
+    summary += ' (' + rawSeats + ' raw \u2212 ' + eliminatedCount + ' eliminated)';
+  }
 
   var el = document.getElementById('running-total');
   var diff = seats - CONFIRMED_COUNT;
