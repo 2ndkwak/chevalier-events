@@ -7,6 +7,12 @@
  * the static print view -- one rendering function, so they can't drift
  * apart visually. Requires table_layout_geometry.js to be loaded first.
  *
+ * Colors are plain hex, NOT CSS var(--...) references -- CSS custom
+ * properties inside SVG fill/stroke presentation attributes are a known
+ * trouble spot in browsers' print rendering pipeline specifically (they
+ * can render fine on-screen but come out blank/invalid on paper). These
+ * hex values match this app's --parchment/--burgundy/--gold/etc palette.
+ *
  * Exposes window.TableRender.renderTable(table, opts) -> SVGGElement
  *   table: {table_num, label, shape, seats, eliminated_seats, x, y, rotation}
  *   opts:  {interactive: bool} -- interactive tables get drag/rotate
@@ -40,7 +46,7 @@
       g.appendChild(el("circle", {
         r: 9,
         fill: "none",
-        stroke: "var(--parchment-md, #cfc3ac)",
+        stroke: "#cfc3ac",
         "stroke-width": 1,
         "stroke-dasharray": "2,2",
       }));
@@ -49,8 +55,8 @@
 
     g.appendChild(el("circle", {
       r: 9,
-      fill: "var(--white, #fff)",
-      stroke: "var(--burgundy, #5c1f2e)",
+      fill: "#fff",
+      stroke: "#5c1f2e",
       "stroke-width": 1.25,
     }));
     const text = el("text", {
@@ -58,7 +64,7 @@
       "dominant-baseline": "central",
       "font-size": 8,
       "font-family": "sans-serif",
-      fill: "var(--ink, #2a2320)",
+      fill: "#2a2320",
     });
     text.textContent = String(seatNum);
     g.appendChild(text);
@@ -72,8 +78,8 @@
     if (shape === "round") {
       return el("circle", {
         r: footprint.radius,
-        fill: "var(--parchment, #f0ede6)",
-        stroke: "var(--burgundy, #5c1f2e)",
+        fill: "#f0ede6",
+        stroke: "#5c1f2e",
         "stroke-width": 2,
       });
     }
@@ -84,8 +90,8 @@
       width: footprint.halfLength * 2,
       height: footprint.halfWidth * 2,
       rx: 6,
-      fill: "var(--parchment, #f0ede6)",
-      stroke: "var(--burgundy, #5c1f2e)",
+      fill: "#f0ede6",
+      stroke: "#5c1f2e",
       "stroke-width": 2,
     });
   }
@@ -103,7 +109,7 @@
       return el("circle", {
         r: footprint.radius + pad,
         fill: "none",
-        stroke: "var(--gold, #b08d3f)",
+        stroke: "#b08d3f",
         "stroke-width": 2,
         "stroke-dasharray": "5,4",
       });
@@ -116,7 +122,7 @@
       height: (footprint.halfWidth + pad) * 2,
       rx: 10,
       fill: "none",
-      stroke: "var(--gold, #b08d3f)",
+      stroke: "#b08d3f",
       "stroke-width": 2,
       "stroke-dasharray": "5,4",
     });
@@ -132,7 +138,7 @@
       "dominant-baseline": "central",
       "font-size": 12,
       "font-family": "Georgia, serif",
-      fill: "var(--burgundy, #5c1f2e)",
+      fill: "#5c1f2e",
       "font-weight": "bold",
     });
     text.textContent = label;

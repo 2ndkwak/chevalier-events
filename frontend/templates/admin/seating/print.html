@@ -156,6 +156,7 @@
       .print-section.printing { display: block !important; }
       .page-preview { box-shadow: none; padding: 0.25in; }
       body { background: #fff; padding: 0; }
+      .no-print { display: none !important; }
     }
 
     /* ── Common print elements ─────────────────────────────────────────── */
@@ -567,6 +568,19 @@
     <span style="color:var(--female);">■</span> Female &nbsp;
     <span style="background:var(--allergy-bg);border:1px solid var(--allergy-bd);padding:0 4px;border-radius:3px;">⚠ allergy / dietary note</span>
     &nbsp;·&nbsp; Printed {{ now }}
+  </div>
+  {% elif is_custom_table_plan %}
+  <div class="no-print" style="padding:2rem 0; text-align:center; font-family:sans-serif; color:var(--ink-muted);">
+    <p style="margin-bottom:1rem;">
+      This event uses a Custom Table Plan, so the round-table visual chart
+      isn't available here -- print the table layout instead.
+    </p>
+    <a href="{{ url_for('table_layout.print_layout', event_id=event.id) }}"
+       style="display:inline-block; padding:.35rem 1rem; border-radius:4px;
+              border:1px solid var(--burgundy); color:var(--burgundy);
+              text-decoration:none; font-family:sans-serif; font-size:.78rem;">
+      Print Table Layout →
+    </a>
   </div>
   {% else %}
   <div style="padding:2rem 0; text-align:center; font-family:sans-serif; color:var(--ink-muted);">

@@ -4,20 +4,30 @@
 {% block content %}
 <div class="page-header">
   <h1>Table Layout — {{ event.title }}</h1>
+  <div style="display:flex; align-items:center; gap:.6rem;">
+    <a href="{{ url_for('seating.print_seating', event_id=event.id) }}" class="btn btn-outline">
+      ← Back to Print/Export
+    </a>
+    <button type="button" class="btn btn-gold" onclick="printLayout()">🖨 Print</button>
+  </div>
 </div>
 <p class="text-sm text-muted" style="margin-top:-.5rem;">
   {{ event.event_date.strftime('%B %d, %Y') if event.event_date else '' }}
 </p>
 
 <div class="card" style="padding:0; overflow:hidden;">
-  <svg id="print-canvas" style="display:block; width:100%; height:80vh; background:var(--white);">
+  <svg id="print-canvas" width="900" height="650"
+       style="display:block; width:100%; max-width:900px; height:650px; background:var(--white);">
     <g id="tables-layer"></g>
   </svg>
 </div>
 
 <style media="print">
+  .site-header, .nav, .site-footer, .flash-list { display: none !important; }
+  .page { max-width: none !important; padding: 0 !important; margin: 0 !important; }
   .page-header a, .btn { display: none !important; }
-  #print-canvas { height: 9in !important; }
+  #print-canvas { width: 100% !important; height: 7.5in !important; max-width: none !important; }
+  .card { box-shadow: none !important; margin: 0 !important; padding: 0 !important; border: none !important; }
 </style>
 
 <script id="table-layout-data" type="application/json">{{ arrangements|tojson }}</script>
@@ -53,6 +63,21 @@
         `${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}`);
     }
   })();
+
+  function printLayout() {
+    // Same signal used by the main print/export page's "Print this view"
+    // button -- the browser's print dialog after window.print() is
+    // invisible to the server, so this click is the only signal
+    // available. This event's "① Visual chart" slot on that page IS
+    // this print for a Custom Table Plan event (see
+    // Event.charts_visual_is_current() and the gate in print_seating()).
+    fetch("{{ url_for('seating.mark_charts_printed', event_id=event.id) }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ which: "visual" })
+    });
+    window.print();
+  }
 </script>
 
 {% endblock %}

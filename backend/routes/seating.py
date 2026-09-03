@@ -718,6 +718,7 @@ def print_seating(event_id):
         t.get("shape", "round") == "round" and 6 <= t["size"] <= 8
         for t in tables_meta
     )
+    is_custom_table_plan = (event.table_config or {}).get("mode") == "custom"
 
     booklet_current, booklet_stale_because = event.booklet_is_current()
     table_cards_current, table_cards_stale_because = event.table_cards_is_current()
@@ -739,6 +740,7 @@ def print_seating(event_id):
         tables_meta = tables_meta,
         guest_count = guest_count,
         visual_chart_available = visual_chart_available,
+        is_custom_table_plan = is_custom_table_plan,
         now         = datetime.now().strftime("%B %d, %Y"),
         booklet_current = booklet_current,
         booklet_stale_because = booklet_stale_because,

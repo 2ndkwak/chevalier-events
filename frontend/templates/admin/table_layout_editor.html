@@ -27,6 +27,10 @@
     <button type="button" id="zoom-in-btn" class="btn btn-outline btn-sm">Zoom In</button>
     <button type="button" id="zoom-out-btn" class="btn btn-outline btn-sm">Zoom Out</button>
     <span style="width:1px; height:1.2rem; background:var(--parchment-md);"></span>
+    <a href="{{ url_for('table_layout.print_layout', event_id=event.id) }}" class="btn btn-outline btn-sm">
+      🖨 Print
+    </a>
+    <span style="width:1px; height:1.2rem; background:var(--parchment-md);"></span>
     <label style="display:flex; align-items:center; gap:.3rem; font-size:.82rem;">
       <input type="checkbox" id="snap-grid-toggle" checked> Snap to grid
     </label>

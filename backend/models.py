@@ -417,6 +417,23 @@ class Event(db.Model):
         return True, []
 
     def charts_visual_is_current(self):
+        """For a Custom-configured event, "① Visual chart" IS the Table
+        Layout Management print (see the gate in seating.py's
+        print_seating()) instead of the normal name-bearing seating
+        chart -- so staleness has to depend on when the layout itself
+        last changed (a table dragged/rotated/resized), not on guest
+        seat assignments, which that print never shows at all. Standard
+        events keep the original seating-chart-based check completely
+        unchanged -- this only branches for Custom."""
+        if self.table_config and self.table_config.get("mode") == "custom":
+            printed_at = self.charts_visual_printed_at
+            if not printed_at:
+                return False, None
+            latest = (db.session.query(db.func.max(TableArrangement.updated_at))
+                      .filter_by(event_id=self.id).scalar())
+            if latest and latest > printed_at:
+                return False, ["table layout"]
+            return True, []
         return self._chart_item_is_current(self.charts_visual_printed_at)
 
     def charts_by_table_is_current(self):
@@ -971,6 +988,12 @@ class TableArrangement(db.Model):
     # Screen-only indicator that this table's shape/size/seats changed since
     # the GS last opened the layout editor -- never rendered on the print view.
     changed_since_sync  = db.Column(db.Boolean, default=False, nullable=False)
+    # Drives Event.charts_visual_is_current() for Custom-configured events --
+    # the print/export page's "① Visual chart" staleness check needs to know
+    # when a table was last repositioned/resized, not when guests were last
+    # reseated (seating_updated_at), since this print never shows guest names.
+    updated_at          = db.Column(db.DateTime, default=datetime.utcnow,
+                                    onupdate=datetime.utcnow)
 
     event = db.relationship("Event")
 
