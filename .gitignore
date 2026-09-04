@@ -9,3 +9,6 @@ __pycache__/
 *.bak.*
 chevalier_events_v29.zip
 Induction_dates.csv
+
+# Pre-edit code snapshots (see Tech Ops Reference, App Layout)
+backups/
