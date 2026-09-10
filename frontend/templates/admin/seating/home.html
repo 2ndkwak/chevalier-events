@@ -163,9 +163,13 @@
     display: flex;
     gap: 2px;
   }
+  .seat-lock-btn {
+    position: absolute;
+    bottom: 2px; right: 3px;
+  }
   .seat-btn {
     background: none; border: none; cursor: pointer;
-    font-size: .65rem; padding: 1px 2px; line-height: 1;
+    font-size: .95rem; padding: 4px 6px; line-height: 1;
     color: var(--ink-muted);
     opacity: 0;
     transition: opacity .1s;
@@ -697,10 +701,10 @@ function renderSeat(tnum, snum) {
     slot.innerHTML = `
       <span class="seat-num">${snum}</span>
       <div class="seat-actions">
-        <button class="seat-btn" title="${occ.is_locked ? 'Unlock' : 'Lock'}"
-                onclick="toggleLockUI(${tnum},${snum})">${occ.is_locked ? '🔒' : '🔓'}</button>
         <button class="seat-btn" title="Unassign" onclick="unassignSeat(${tnum},${snum})">✕</button>
       </div>
+      <button class="seat-btn seat-lock-btn" title="${occ.is_locked ? 'Unlock' : 'Lock'}"
+              onclick="toggleLockUI(${tnum},${snum})">${occ.is_locked ? '🔒' : '🔓'}</button>
       <div class="seat-occupant" draggable="true"
            data-table="${tnum}" data-seat="${snum}">
         ${isOfficer ? '⭐ ' : ''}${name}

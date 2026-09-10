@@ -560,8 +560,19 @@ def save_canvas(event_id):
 
     was_accepted, _ = event.seating_is_accepted()
 
-    # Delete all unlocked assignments for this event
-    SeatAssignment.query.filter_by(event_id=event_id, is_locked=False).delete()
+    # Delete every existing assignment for this event, then rebuild from
+    # the payload in full. The canvas payload is the complete, authoritative
+    # state -- including locked seats -- so there's nothing to selectively
+    # preserve here. (This differs from _apply_proposal() below: an AI
+    # proposal is a partial suggestion that must never touch locked seats,
+    # but a manual canvas save reflects the GS's own deliberate state,
+    # including any seat they've just unlocked and reassigned. Excluding
+    # locked rows from this delete -- as originally written, mirroring
+    # _apply_proposal()'s pattern -- left a stale row in place whenever a
+    # seat's lock state changed between saves, colliding with the fresh
+    # insert below on the (event_id, table_num, seat_num) unique
+    # constraint.)
+    SeatAssignment.query.filter_by(event_id=event_id).delete()
     db.session.flush()
 
     for table in data["tables"]:
