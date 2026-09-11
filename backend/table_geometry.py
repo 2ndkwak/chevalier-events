@@ -44,3 +44,28 @@ def rectangular_end_seat_numbers(size):
     """
     side_a, _side_b = rectangular_side_split(size)
     return 1, 2 + side_a
+
+
+def rectangular_side_seat_numbers(size):
+    """
+    Return (side_a_seats, side_b_seats) -- the actual list of seat numbers
+    on each long side, per the perimeter-walk convention. Side A is walked
+    first (immediately after end1); side B is walked second (immediately
+    after end2, closing the loop back toward end1).
+
+    Used by the Custom Table Plan "Seats on One Side" option (head-table
+    layouts, seats facing one direction only): that option always
+    eliminates side B specifically -- a fixed, deterministic choice. The
+    GS then uses the table's rotation in Table Layout Management to point
+    the remaining side (side A) at the room. This fixed convention is
+    also why the "Left End Seat" / "Right End Seat" options (end1 / end2
+    respectively) matter on their own: once rotation is spent pointing
+    side A at the room, there's no second independent rotation left to
+    also fix which end lands on which side of the room -- that has to be
+    chosen at elimination time, before rotation.
+    """
+    side_a_count, side_b_count = rectangular_side_split(size)
+    _end1, end2 = rectangular_end_seat_numbers(size)
+    side_a_seats = list(range(2, 2 + side_a_count))
+    side_b_seats = list(range(end2 + 1, end2 + 1 + side_b_count))
+    return side_a_seats, side_b_seats

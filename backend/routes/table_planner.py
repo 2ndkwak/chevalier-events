@@ -1,7 +1,7 @@
 from flask import Blueprint, render_template, request, flash, redirect, url_for
 from flask_login import login_required
 from ..routes.admin import admin_required
-from ..table_geometry import rectangular_end_seat_numbers
+from ..table_geometry import rectangular_end_seat_numbers, rectangular_side_seat_numbers
 
 table_planner_bp = Blueprint("table_planner", __name__)
 
@@ -140,6 +140,28 @@ def custom_planner():
 
     tables = existing.get("tables", []) if existing_mode == "custom" else []
 
+    # Derive the three independent checkbox states from the saved
+    # eliminated_seats list, so re-opening an existing Custom Table Plan
+    # shows the correct checkboxes checked. Computed here (server-side)
+    # rather than re-derived in JS on page load, to avoid a second,
+    # potentially-drifting copy of this logic.
+    for t in tables:
+        t["elim_left"] = t["elim_right"] = t["elim_side"] = False
+        if t.get("shape") == "rectangular" and t.get("eliminated_seats"):
+            size = t.get("size", 0)
+            if size >= 2:
+                eliminated = set(t["eliminated_seats"])
+                end1, end2 = rectangular_end_seat_numbers(size)
+                _side_a, side_b = rectangular_side_seat_numbers(size)
+                t["elim_left"] = end1 in eliminated
+                t["elim_right"] = end2 in eliminated
+                # "One Side" is only considered checked if every side-B
+                # seat is eliminated -- a partial match (e.g. from data
+                # edited some other way) shouldn't falsely show it checked.
+                t["elim_side"] = bool(side_b) and set(side_b).issubset(eliminated)
+        t["elim_encoded"] = ",".join(f for f, on in
+            (("left", t["elim_left"]), ("right", t["elim_right"]), ("side", t["elim_side"])) if on)
+
     return render_template("admin/custom_table_planner.html",
                            event=event,
                            tables=tables,
@@ -164,7 +186,15 @@ def save_custom_config():
     labels = request.form.getlist("table_label[]")
     shapes = request.form.getlist("table_shape[]")
     sizes  = request.form.getlist("table_size[]")
-    ends   = request.form.getlist("table_eliminated[]")  # "none" | "one" | "both"
+    # Comma-separated combination of zero or more of "left", "right",
+    # "side" (e.g. "", "left", "left,side", "left,right,side"). Always
+    # submitted via a hidden input per row (never a bare checkbox), kept
+    # in sync with the checkboxes by JS on every change -- deliberately
+    # avoiding unchecked-checkboxes-just-vanish-from-the-request, which
+    # would silently misalign these parallel arrays exactly the way a
+    # disabled field once did (see the length guard below, and Part 2 of
+    # the session that first built this feature).
+    ends   = request.form.getlist("table_eliminated[]")
 
     # Guard against silent data loss: label/shape/size/eliminated are meant
     # to be four parallel arrays, one entry per table row. If a browser
@@ -196,17 +226,27 @@ def save_custom_config():
         label = (label or f"Table {table_num}").strip() or f"Table {table_num}"
 
         entry = {"id": table_num, "label": label, "size": size, "shape": shape}
-        if shape == "rectangular":
-            if end == "one":
-                entry["eliminated_seats"] = [1]
-            elif end == "both":
-                # The second end seat is NOT always seat `size` -- see
-                # table_geometry.py for why. Using `size` directly was
-                # the original bug: for any table with seats on both
-                # long sides (size >= 4), it eliminated an ordinary side
-                # seat instead of the true second end.
+        if shape == "rectangular" and size >= 2:
+            flags = set(f for f in end.split(",") if f)
+            eliminated = set()
+            if "left" in flags or "right" in flags:
                 end1, end2 = rectangular_end_seat_numbers(size)
-                entry["eliminated_seats"] = [end1, end2]
+                if "left" in flags:
+                    eliminated.add(end1)
+                if "right" in flags:
+                    eliminated.add(end2)
+            if "side" in flags:
+                # Always side B specifically -- a fixed, deterministic
+                # choice. See rectangular_side_seat_numbers() for why: the
+                # GS points the remaining side at the room via the
+                # table's rotation in Table Layout Management, and having
+                # "which side" also be independently choosable here would
+                # only recreate the same ambiguity that motivated adding
+                # separate Left/Right end options in the first place.
+                _side_a, side_b = rectangular_side_seat_numbers(size)
+                eliminated.update(side_b)
+            if eliminated:
+                entry["eliminated_seats"] = sorted(eliminated)
 
         tables.append(entry)
         table_num += 1

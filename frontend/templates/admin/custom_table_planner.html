@@ -3,10 +3,22 @@
 
 {% block content %}
 <style>
-  .eliminated-select-inert {
+  .elim-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .elim-group.elim-group-inert {
     opacity: .55;
     pointer-events: none;
-    background: var(--parchment, #f0ede6);
+  }
+  .elim-check {
+    display: flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .78rem;
+    font-weight: normal;
+    white-space: nowrap;
   }
 </style>
 <div class="page-header">
@@ -27,7 +39,7 @@
 </div>
 {% endif %}
 
-<div class="card" style="max-width:900px;">
+<div class="card" style="max-width:980px;">
   <div class="card-title">Tables</div>
 
   <form method="POST" id="custom-table-form"
@@ -37,11 +49,11 @@
     <table class="data-table" id="tables-table">
       <thead>
         <tr>
-          <th style="width:26%;">Table label</th>
-          <th style="width:20%;">Shape</th>
-          <th style="width:14%;">Size</th>
-          <th style="width:22%;">Ends eliminated</th>
-          <th style="width:18%;"></th>
+          <th style="width:22%;">Table label</th>
+          <th style="width:14%;">Shape</th>
+          <th style="width:10%;">Size</th>
+          <th style="width:38%;">Seats Eliminated</th>
+          <th style="width:16%;"></th>
         </tr>
       </thead>
       <tbody id="tables-tbody">
@@ -58,11 +70,21 @@
                       oninput="updateTotal()"></td>
           <td>
             {% set el = t.eliminated_seats or [] %}
-            <select name="table_eliminated[]" class="eliminated-select {% if t.shape != 'rectangular' %}eliminated-select-inert{% endif %}" onchange="updateTotal()">
-              <option value="none" {% if el|length == 0 %}selected{% endif %}>None</option>
-              <option value="one"  {% if el|length == 1 %}selected{% endif %}>One</option>
-              <option value="both" {% if el|length == 2 %}selected{% endif %}>Both</option>
-            </select>
+            <div class="elim-group {% if t.shape != 'rectangular' %}elim-group-inert{% endif %}">
+              <label class="elim-check">
+                <input type="checkbox" class="elim-cb elim-left" {% if t.elim_left %}checked{% endif %}
+                       onchange="onElimChange(this)"> Left end
+              </label>
+              <label class="elim-check">
+                <input type="checkbox" class="elim-cb elim-right" {% if t.elim_right %}checked{% endif %}
+                       onchange="onElimChange(this)"> Right end
+              </label>
+              <label class="elim-check">
+                <input type="checkbox" class="elim-cb elim-side" {% if t.elim_side %}checked{% endif %}
+                       onchange="onElimChange(this)"> One side (head table)
+              </label>
+            </div>
+            <input type="hidden" name="table_eliminated[]" class="eliminated-hidden" value="{{ t.elim_encoded }}">
           </td>
           <td>
             <button type="button" class="btn btn-outline btn-sm" onclick="removeRow(this)">Remove</button>
@@ -100,11 +122,18 @@
     <td><input type="number" name="table_size[]" min="2" max="99" value="8" required
                 oninput="updateTotal()"></td>
     <td>
-      <select name="table_eliminated[]" class="eliminated-select eliminated-select-inert" onchange="updateTotal()">
-        <option value="none" selected>None</option>
-        <option value="one">One</option>
-        <option value="both">Both</option>
-      </select>
+      <div class="elim-group elim-group-inert">
+        <label class="elim-check">
+          <input type="checkbox" class="elim-cb elim-left" onchange="onElimChange(this)"> Left end
+        </label>
+        <label class="elim-check">
+          <input type="checkbox" class="elim-cb elim-right" onchange="onElimChange(this)"> Right end
+        </label>
+        <label class="elim-check">
+          <input type="checkbox" class="elim-cb elim-side" onchange="onElimChange(this)"> One side (head table)
+        </label>
+      </div>
+      <input type="hidden" name="table_eliminated[]" class="eliminated-hidden" value="">
     </td>
     <td>
       <button type="button" class="btn btn-outline btn-sm" onclick="removeRow(this)">Remove</button>
@@ -131,14 +160,35 @@ function removeRow(btn) {
 
 function onShapeChange(select) {
   var row = select.closest('tr');
-  var elimSelect = row.querySelector('.eliminated-select');
+  var elimGroup = row.querySelector('.elim-group');
   if (select.value === 'rectangular') {
-    elimSelect.classList.remove('eliminated-select-inert');
+    elimGroup.classList.remove('elim-group-inert');
   } else {
-    elimSelect.classList.add('eliminated-select-inert');
-    elimSelect.value = 'none';
+    elimGroup.classList.add('elim-group-inert');
+    row.querySelectorAll('.elim-cb').forEach(function (cb) { cb.checked = false; });
+    row.querySelector('.eliminated-hidden').value = '';
   }
   updateTotal();
+}
+
+function onElimChange(checkbox) {
+  var row = checkbox.closest('tr');
+  var flags = [];
+  if (row.querySelector('.elim-left').checked)  flags.push('left');
+  if (row.querySelector('.elim-right').checked) flags.push('right');
+  if (row.querySelector('.elim-side').checked)  flags.push('side');
+  row.querySelector('.eliminated-hidden').value = flags.join(',');
+  updateTotal();
+}
+
+// Number of seats on the side eliminated by "One side (head table)", for
+// a rectangular table of the given size. Mirrors
+// rectangular_side_seat_numbers()'s side-B count in backend/table_geometry.py
+// -- keep in sync if that convention ever changes.
+function sideBCount(size) {
+  if (size < 2) return 0;
+  var k = size - 2;
+  return Math.floor(k / 2);
 }
 
 function renumberLabels() {
@@ -162,9 +212,11 @@ function updateTotal() {
     var n = parseInt(sizeInput.value, 10);
     if (!isNaN(n)) rawSeats += n;
 
-    var elimSelect = row.querySelector('.eliminated-select');
-    if (elimSelect.value === 'one') eliminatedCount += 1;
-    else if (elimSelect.value === 'both') eliminatedCount += 2;
+    if (row.querySelector('.elim-left').checked)  eliminatedCount += 1;
+    if (row.querySelector('.elim-right').checked) eliminatedCount += 1;
+    if (row.querySelector('.elim-side').checked && !isNaN(n)) {
+      eliminatedCount += sideBCount(n);
+    }
   });
   var seats = rawSeats - eliminatedCount;
 
