@@ -18,7 +18,7 @@ from docx.oxml import OxmlElement
 from lxml import etree
 
 BURGUNDY = RGBColor(0x6B, 0x1A, 0x2A)
-MUTED    = RGBColor(0x7A, 0x66, 0x50)
+MUTED    = RGBColor(0x5C, 0x4A, 0x38)
 
 # Card dimensions
 CARD_W_IN = 3.75
@@ -39,6 +39,27 @@ CARD_H_IN = 2.875   # = 4140 twips = Avery 5011 exact cell height.
                      # content flush to the limit, and re-verify with an
                      # actual printed sheet (not just Print Preview) after
                      # any layout change here.
+                     #
+                     # FONT SIZES (raised for dim-light/low-vision readability,
+                     # this session): front-face name 15pt->16pt, table/seat
+                     # line 7pt->9pt (also darkened from MUTED's original
+                     # lighter tone), folded/upside-down name 28pt->32pt (safe
+                     # to grow further if ever wanted -- it lives in its own
+                     # fixed-size textbox and doesn't consume stacked cell
+                     # height the way the front-face lines do). The name
+                     # paragraph's line_spacing (0.88, tighter than Word's
+                     # ~1.15-1.2 default) and the smaller logo (0.3in, was
+                     # 0.38in) and allergy dot (14pt, was 22pt) exist
+                     # specifically to reclaim the vertical room the larger
+                     # front-face text needed. The binding worst case is a
+                     # two-line-wrapping name (long name, or a hyphenated
+                     # surname) combined with an active allergy flag on the
+                     # same card -- that combination is what actually reaches
+                     # the ceiling above; verified clean with real headroom
+                     # against a deliberately extreme test name at this
+                     # revision's sizes. If anyone raises any of these sizes
+                     # further, re-test that exact combination the same way,
+                     # not just a short single-line name.
 HALF_H_IN = CARD_H_IN / 2   # 1.4375"
 
 # EMU constants
@@ -170,8 +191,8 @@ def _rotated_name_paragraph(first_name):
                                 <w:rFonts w:ascii="Georgia" w:hAnsi="Georgia"/>
                                 <w:b/>
                                 <w:color w:val="6B1A2A"/>
-                                <w:sz w:val="56"/>
-                                <w:szCs w:val="56"/>
+                                <w:sz w:val="64"/>
+                                <w:szCs w:val="64"/>
                               </w:rPr>
                               <w:t>{first_name}</w:t>
                             </w:r>
@@ -245,7 +266,7 @@ def _fill_card(cell, seat, logo_path):
     p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p_logo.paragraph_format.space_before = Pt(2)
     p_logo.paragraph_format.space_after  = Pt(1.5)
-    p_logo.add_run().add_picture(logo_path, width=Inches(0.38))
+    p_logo.add_run().add_picture(logo_path, width=Inches(0.3))
 
     if seat.get('has_allergy'):
         # Right-aligned tab stop at the far edge of the usable cell width
@@ -258,15 +279,28 @@ def _fill_card(cell, seat, logo_path):
         tab_stops.add_tab_stop(Inches(usable_width_in - 0.05), WD_TAB_ALIGNMENT.RIGHT)
         p_logo.add_run('\t')
         r_dot = p_logo.add_run('\u25CF')   # red dot -- active allergy flag for this event
-        r_dot.font.name = 'Georgia'; r_dot.font.size = Pt(22); r_dot.font.bold = True
+        r_dot.font.name = 'Georgia'; r_dot.font.size = Pt(14); r_dot.font.bold = True
         r_dot.font.color.rgb = RGBColor(0xC4, 0x1E, 0x1E)
 
     p_name = cell.add_paragraph()
     p_name.alignment = WD_ALIGN_PARAGRAPH.CENTER
     p_name.paragraph_format.space_before = Pt(0)
-    p_name.paragraph_format.space_after  = Pt(1)
+    p_name.paragraph_format.space_after  = Pt(0.5)
+    p_name.paragraph_format.line_spacing = 0.88  # tighter than Word's default
+                                                   # ~1.15-1.2 multiplier -- reclaims
+                                                   # vertical space for names that wrap
+                                                   # to two lines at the larger size
+                                                   # below. See CARD_H_IN's comment:
+                                                   # this card's total stacked height
+                                                   # is already close to the documented
+                                                   # silent-clipping ceiling, and a
+                                                   # 2-line name is the case that
+                                                   # actually hits it. Verified against
+                                                   # a genuinely long 2-line test name
+                                                   # before shipping -- don't loosen
+                                                   # this without re-testing the same way.
     r = p_name.add_run(seat['name'])
-    r.font.name = 'Georgia'; r.font.size = Pt(15)
+    r.font.name = 'Georgia'; r.font.size = Pt(16)
     r.font.color.rgb = BURGUNDY; r.font.bold = False
 
     p_loc = cell.add_paragraph()
@@ -274,7 +308,7 @@ def _fill_card(cell, seat, logo_path):
     p_loc.paragraph_format.space_before = Pt(0)
     p_loc.paragraph_format.space_after  = Pt(0)
     r2 = p_loc.add_run(f"{seat['table_label']}  ·  Seat {seat['seat_num']}")
-    r2.font.name = 'Arial'; r2.font.size = Pt(7)
+    r2.font.name = 'Arial'; r2.font.size = Pt(9)
     r2.font.color.rgb = MUTED; r2.font.all_caps = True
 
 
