@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Photos & Documents — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Photos &amp; Documents</h1>
+</div>
+
+{% if events %}
+  {% for event in events %}
+  <div class="card">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:1rem;">
+      <div>
+        <h2 style="font-size:1.1rem; font-weight:normal; color:var(--burgundy-dk); letter-spacing:.03em;">
+          {{ event.title }}
+        </h2>
+        <div style="margin-top:.3rem; font-family:sans-serif; font-size:.82rem; color:var(--ink-muted);">
+          {{ event.event_date.strftime("%A, %B %d, %Y") }}
+          {% if event.venue_name %}&nbsp;·&nbsp; {{ event.venue_name }}{% endif %}
+        </div>
+      </div>
+      <div style="text-align:right;">
+        <div class="text-muted text-sm" style="margin-bottom:.4rem;">
+          {{ event.uploads|length }} file{{ 's' if event.uploads|length != 1 }}
+        </div>
+        <a href="{{ url_for('portal.photos_event', event_id=event.id) }}" class="btn btn-outline btn-sm">
+          {% if event.uploads %}View{% else %}Add photos or documents{% endif %}
+        </a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+{% else %}
+  <div class="card" style="text-align:center; padding:3rem;">
+    <p style="color:var(--ink-muted); font-style:italic;">No events yet.</p>
+  </div>
+{% endif %}
+{% endblock %}

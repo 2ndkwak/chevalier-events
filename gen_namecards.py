@@ -227,14 +227,20 @@ def _rotated_name_paragraph(first_name):
     return etree.fromstring(xml)
 
 
-def _fill_card(cell, seat, logo_path):
+def _fill_card(cell, seat, logo_path, partner_logo_path=None):
     cell.vertical_alignment = WD_ALIGN_VERTICAL.TOP
 
     # Remove default empty paragraph
     for p in list(cell.paragraphs):
         p._element.getparent().remove(p._element)
 
-    first_name = seat['name'].split()[0]
+    # Use the actual first_name column rather than parsing it back out of
+    # the formatted display name -- display_name puts the title first
+    # ("Mr. Ken Vito"), so splitting on whitespace grabbed the title
+    # instead of the first name whenever one was set. seat['first_name']
+    # is supplied directly by the route now; the split is kept only as a
+    # defensive fallback for any other caller that doesn't provide it.
+    first_name = seat.get('first_name') or seat['name'].split()[0]
 
     # ── BACK FACE: rotated first name (top half) ──────────────────────────
     rot_p = _rotated_name_paragraph(first_name)
@@ -266,7 +272,18 @@ def _fill_card(cell, seat, logo_path):
     p_logo.alignment = WD_ALIGN_PARAGRAPH.LEFT
     p_logo.paragraph_format.space_before = Pt(2)
     p_logo.paragraph_format.space_after  = Pt(1.5)
-    p_logo.add_run().add_picture(logo_path, width=Inches(0.3))
+    if partner_logo_path:
+        # Joint event: the partner's logo sits right beside ours, both at
+        # the left edge, well clear of the allergy dot in the right corner.
+        # Pre-composed into one image so the spacing is exact in any
+        # program (see logo_utils.combined_logo_png). Exactly the same
+        # height as our logo alone (the partner's is capped at ours), so
+        # the card's vertical budget -- see CARD_H_IN -- is unchanged.
+        import logo_utils
+        img, total_w, _ = logo_utils.combined_logo_png(logo_path, 0.3, partner_logo_path, 0.07)
+        p_logo.add_run().add_picture(img, width=Inches(total_w))
+    else:
+        p_logo.add_run().add_picture(logo_path, width=Inches(0.3))
 
     if seat.get('has_allergy'):
         # Right-aligned tab stop at the far edge of the usable cell width
@@ -343,7 +360,7 @@ def _section_break_para(doc):
     r.font.size = Pt(1)
 
 
-def generate(seats_data, logo_path, out_path):
+def generate(seats_data, logo_path, out_path, partner_logo_path=None):
     sorted_seats = sorted(
         seats_data,
         key=lambda s: (s.get('table_num', 0), s['seat_num'])
@@ -382,7 +399,7 @@ def generate(seats_data, logo_path, out_path):
                 _set_cell_props(cell, CARD_W_IN)
                 seat = chunk[r * 2 + c]
                 if seat:
-                    _fill_card(cell, seat, logo_path)
+                    _fill_card(cell, seat, logo_path, partner_logo_path)
 
     doc.save(out_path)
 

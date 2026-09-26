@@ -27,7 +27,14 @@ def upload():
 
         # -- Preview ------------------------------------------------------
         if action == "preview" and file:
-            content = file.read().decode("utf-8-sig")
+            raw = file.read()
+            try:
+                content = raw.decode("utf-8-sig")
+            except UnicodeDecodeError:
+                # Excel on Windows commonly saves CSVs as Windows-1252
+                # ("ANSI") rather than UTF-8 -- any accented or special
+                # character then fails to decode as UTF-8.
+                content = raw.decode("cp1252")
             rows, errors = _parse_csv(io.StringIO(content))
             if not errors:
                 preview = rows

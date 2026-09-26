@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}GS Manual — Chevalier Events{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>GS Manual</h1>
+  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline">← Back to dashboard</a>
+</div>
+
+<div class="card" style="max-width:760px;">
+  <div class="card-title">Current manual</div>
+  {% if manual %}
+    <p style="font-size:.92rem; color:var(--ink-mid);">
+      {% if manual.source_filename %}<strong>{{ manual.source_filename }}</strong> — {% endif %}
+      last updated {{ manual.uploaded_at.strftime("%B %d, %Y at %I:%M %p") }} UTC
+      {% if manual.uploaded_by %}by {{ manual.uploaded_by.display_name }}{% endif %}.
+    </p>
+    <p class="text-muted text-sm" style="margin-top:.3rem;">
+      {{ manual.text_content|length }} characters — this is what the GS Support
+      widget draws its answers from, on every admin screen.
+    </p>
+  {% else %}
+    <p class="text-muted text-sm">
+      No manual has been uploaded yet. Upload one below to turn on the GS
+      Support widget for everyone.
+    </p>
+  {% endif %}
+</div>
+
+{% if not extracted_text %}
+<!-- Step 1: Upload -->
+<div class="card" style="max-width:760px;">
+  <div class="card-title">Upload a new manual</div>
+  <p class="text-sm text-muted" style="margin-bottom:1rem;">
+    PDF or Word (.docx). Uploading replaces the entire current manual — this
+    doesn't merge with what's there now. You'll see the extracted text and
+    can fix anything before it's saved.
+  </p>
+  <form method="POST" enctype="multipart/form-data"
+        action="{{ url_for('gs_support.manual_extract') }}">
+    <div class="form-group" style="margin-bottom:1rem;">
+      <label for="manual_file">Manual file (PDF or .docx)</label>
+      <input type="file" id="manual_file" name="manual_file" accept=".pdf,.docx"
+             style="font-family:sans-serif; font-size:.9rem; padding:.4rem 0;">
+    </div>
+    <button type="submit" class="btn btn-primary">Extract text for review</button>
+  </form>
+</div>
+
+{% else %}
+<!-- Step 2: Preview / edit / save -->
+<div class="card" style="max-width:760px;">
+  <div class="card-title">Review extracted text — {{ source_filename }}</div>
+  <p class="text-muted text-sm" style="margin-bottom:1rem;">
+    Fix anything that came through wrong (tables and special characters
+    occasionally don't extract cleanly) before saving. This is exactly what
+    the AI will see on every support question, so it's worth a careful read.
+  </p>
+  <form method="POST" action="{{ url_for('gs_support.manual_save') }}">
+    <input type="hidden" name="source_filename" value="{{ source_filename }}">
+    <textarea name="manual_text" rows="24"
+              style="width:100%; font-family:monospace; font-size:.8rem;
+                     padding:.8rem; border:1px solid var(--parchment-dk);
+                     border-radius:4px; background:var(--parchment);">{{ extracted_text }}</textarea>
+    <div style="display:flex; gap:.6rem; margin-top:1rem;">
+      <button type="submit" class="btn btn-primary">✓ Save as the active manual</button>
+      <a href="{{ url_for('gs_support.manual_home') }}" class="btn btn-outline">← Cancel, start over</a>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+{% endblock %}

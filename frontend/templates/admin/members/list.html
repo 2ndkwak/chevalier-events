@@ -43,6 +43,7 @@
       <option value="partner"   {% if ftype=='partner'   %}selected{% endif %}>Partners only</option>
       <option value="partner_member_chevalier"     {% if ftype=='partner_member_chevalier'     %}selected{% endif %}>Partner Member Chevaliers only</option>
       <option value="partner_non_member_chevalier" {% if ftype=='partner_non_member_chevalier' %}selected{% endif %}>Partner Non-Member Chevaliers only</option>
+      <option value="visitor" {% if ftype=='visitor' %}selected{% endif %}>Visitors (other organizations)</option>
     </select>
     <select name="sort" style="max-width:160px;">
       <option value="last_name"  {% if sort=='last_name'  %}selected{% endif %}>Sort by last name</option>
@@ -91,6 +92,9 @@
                 {% else %}<span class="text-muted">--</span>{% endif %}
                 {% if p.is_admin %}
                   <span class="badge" style="background:var(--burgundy);color:#fff;font-size:.65rem;margin-left:.2rem;">Admin</span>
+                {% endif %}
+                {% if p.affiliation %}
+                  <span class="badge badge-muted" style="font-size:.65rem;margin-left:.2rem;">{{ p.affiliation }}</span>
                 {% endif %}
               </td>
               <td class="text-sm text-muted">{{ p.email or '--' }}</td>

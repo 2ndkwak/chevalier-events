@@ -93,6 +93,73 @@ def edit_event(event_id):
                            promotion_sending=_promotion_send_in_progress(event))
 
 
+# --- JOINT EVENT (partner organization) --------------------------------------
+
+PARTNER_LOGO_EXTS = (".jpg", ".jpeg", ".png")
+
+
+def partner_logo_path(event):
+    """Absolute path to this event's uploaded partner logo, or None if there
+    isn't one (or the file has gone missing). Used by every print generator
+    that shows the partner's logo beside ours."""
+    import os
+    if not event or not event.partner_org_name or not event.partner_logo_filename:
+        return None
+    path = os.path.join(current_app.instance_path, "partner_logos", event.partner_logo_filename)
+    return path if os.path.exists(path) else None
+
+
+@events_bp.route("/<int:event_id>/joint", methods=["POST"])
+@login_required
+@admin_required
+def save_joint_settings(event_id):
+    """Save (or clear) the partner organization for a joint event: its name,
+    which prints on the booklet cover and heads its group in the attendee
+    list, and its logo, which prints beside ours on the cover, table name
+    cards and guest name badges."""
+    import os
+    from werkzeug.utils import secure_filename
+    event = Event.query.get_or_404(event_id)
+
+    if request.form.get("clear") == "1":
+        event.partner_org_name = None
+        event.partner_logo_filename = None
+        db.session.commit()
+        flash("Joint-event settings cleared -- printed materials are back to ours only.", "success")
+        return redirect(url_for("events.edit_event", event_id=event.id))
+
+    event.partner_org_name = request.form.get("partner_org_name", "").strip() or None
+
+    f = request.files.get("partner_logo")
+    if f and f.filename:
+        ext = os.path.splitext(f.filename)[1].lower()
+        if ext not in PARTNER_LOGO_EXTS:
+            flash("The logo must be a JPG or PNG image.", "error")
+            return redirect(url_for("events.edit_event", event_id=event.id))
+        folder = os.path.join(current_app.instance_path, "partner_logos")
+        os.makedirs(folder, exist_ok=True)
+        fname = f"event_{event.id}_" + secure_filename(os.path.basename(f.filename))
+        f.save(os.path.join(folder, fname))
+        event.partner_logo_filename = fname
+
+    db.session.commit()
+    flash("Joint-event settings saved.", "success")
+    return redirect(url_for("events.edit_event", event_id=event.id))
+
+
+@events_bp.route("/<int:event_id>/joint/logo")
+@login_required
+@admin_required
+def partner_logo(event_id):
+    """Serves the uploaded partner logo, for the preview on the event page."""
+    from flask import send_file, abort
+    event = Event.query.get_or_404(event_id)
+    path = partner_logo_path(event)
+    if not path:
+        abort(404)
+    return send_file(path)
+
+
 # --- PUBLISH / UNPUBLISH ------------------------------------------------------
 
 @events_bp.route("/<int:event_id>/publish", methods=["POST"])
@@ -125,6 +192,13 @@ def unpublish_event(event_id):
 def delete_event(event_id):
     event = Event.query.get_or_404(event_id)
     title = event.title
+    # Sep 2026: the EventUpload rows cascade-delete automatically via the
+    # relationship in models.py, but that only removes the database rows --
+    # the actual files on disk need cleaning up explicitly here, before
+    # they become orphaned with nothing pointing to them.
+    from ..uploads import delete_upload_file
+    for upload in event.uploads:
+        delete_upload_file(upload.stored_filename)
     # Two RSVP rows that reference each other via linked_rsvp_id (couples,
     # confirmed or waitlisted together) form a circular reference that
     # SQLAlchemy can't figure out a delete order for on its own -- clear
@@ -646,6 +720,7 @@ def _send_promotion_batch(app, event_id):
             recipients = [p for p in Person.query.filter(
                 Person.email.isnot(None),
                 Person.person_type.in_(PROMOTION_ELIGIBLE_TYPES),
+                Person.affiliation.is_(None),   # joint-event visitors never get promotions
             ).all() if p.id not in responded_ids]
             # EventPromotionSend is still "at most one row per (event,
             # person)" -- opened_at open-tracking depends on that -- so a

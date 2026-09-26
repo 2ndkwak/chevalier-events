@@ -90,7 +90,8 @@ def _fit_text_block(c, text, font, start_size, min_size, max_lines, max_width_pt
     return lines[:max_lines], size
 
 
-def _draw_badge(c, x0_in, y0_in, logo, first_name, last_name):
+def _draw_badge(c, x0_in, y0_in, logo, first_name, last_name, partner_logo=None,
+                logo_path=None, partner_logo_path=None):
     x0, y0 = x0_in * IN, y0_in * IN
     cx = x0 + (BADGE_W_IN * IN) / 2
     max_w = (BADGE_W_IN - 0.3) * IN   # usable width, small margin each side
@@ -108,6 +109,18 @@ def _draw_badge(c, x0_in, y0_in, logo, first_name, last_name):
     logo_w = logo_h * (logo.getSize()[0] / logo.getSize()[1])
     c.drawImage(logo, x0 + inset, y0 + BADGE_H_IN * IN - inset - logo_h,
                width=logo_w, height=logo_h, mask='auto')
+
+    if partner_logo is not None:
+        # Joint event: partner's logo beside ours, same visible artwork area
+        # (see logo_utils), capped at our logo's height, vertically centered
+        # on ours.
+        import logo_utils
+        p_w, p_h = logo_utils.partner_size_for(logo_path, logo_w, logo_h, partner_logo_path)
+        if p_h > logo_h:
+            p_w, p_h = p_w * logo_h / p_h, logo_h
+        c.drawImage(partner_logo, x0 + inset + logo_w + 0.1 * IN,
+                   y0 + BADGE_H_IN * IN - inset - logo_h / 2 - p_h / 2,
+                   width=p_w, height=p_h, mask='auto')
 
     # ---- Name block: first name large & bold above, last name below ----
     # Both wrap to up to 2 lines and shrink if needed, so a long compound
@@ -145,13 +158,14 @@ def _draw_badge(c, x0_in, y0_in, logo, first_name, last_name):
         c.drawCentredString(cx, y + (ln_line_h - ln_size) * 0.3, ln)
 
 
-def generate(guests, logo_path, out_path):
+def generate(guests, logo_path, out_path, partner_logo_path=None):
     """
     guests: list of dicts, each {"first_name": str, "last_name": str}.
     One badge per guest, one guest per slot, 8 slots per sheet.
     """
     c = canvas.Canvas(out_path, pagesize=(PAGE_W, PAGE_H))
     logo = ImageReader(logo_path)
+    partner_logo = ImageReader(partner_logo_path) if partner_logo_path else None
 
     if not guests:
         c.save()
@@ -163,6 +177,7 @@ def generate(guests, logo_path, out_path):
             c.showPage()
         x0_in, y0_in = _badge_origin_in(slot)
         _draw_badge(c, x0_in, y0_in, logo,
-                   guest.get("first_name", ""), guest.get("last_name", ""))
+                   guest.get("first_name", ""), guest.get("last_name", ""), partner_logo,
+                   logo_path, partner_logo_path)
 
     c.save()

@@ -811,17 +811,20 @@ def export_namecards(event_id):
     for sa in assignments:
         if sa.person:
             name = sa.person.display_name
+            first_name = sa.person.first_name
             has_allergy = any(t.id not in off_ids for t in sa.person.dietary_tags)
         elif sa.guest:
             name = sa.guest.display_name
+            first_name = sa.guest.first_name
             has_allergy = any(t.id not in off_ids for t in sa.guest.dietary_tags)
         else:
             continue
         tbl = next((t for t in (event.table_config or {}).get("tables", [])
                     if t["id"] == sa.table_num), None)
         label = tbl["label"] if tbl else f"Table {sa.table_num}"
-        seats.append({"name": name, "table_label": label, "seat_num": sa.seat_num,
-                      "table_num": sa.table_num, "has_allergy": has_allergy})
+        seats.append({"name": name, "first_name": first_name, "table_label": label,
+                      "seat_num": sa.seat_num, "table_num": sa.table_num,
+                      "has_allergy": has_allergy})
 
     project_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     logo = os.path.join(project_root, "frontend", "static", "img", "Chevalier_Logo.jpg")
@@ -836,7 +839,7 @@ def export_namecards(event_id):
         import importlib
         import gen_namecards as _gnc
         importlib.reload(_gnc)
-        _gnc.generate(seats, logo, out.name)
+        _gnc.generate(seats, logo, out.name, _partner_logo_path(event))
     except Exception as e:
         flash(f"Export failed: {e}", "error")
         return redirect(url_for("seating.print_seating", event_id=event_id))
@@ -894,7 +897,7 @@ def export_namebadges(event_id):
         import importlib
         import gen_namebadges as _gnb
         importlib.reload(_gnb)
-        _gnb.generate(guests, logo, out.name)
+        _gnb.generate(guests, logo, out.name, _partner_logo_path(event))
     except Exception as e:
         flash(f"Export failed: {e}", "error")
         return redirect(url_for("seating.print_seating", event_id=event_id))
@@ -1317,7 +1320,11 @@ def officer_ranking(event_id):
     member_officers = (RSVP.query.join(Person, RSVP.person_id == Person.id)
                         .filter(RSVP.event_id == event_id,
                                 RSVP.status == "confirmed",
-                                Person.is_officer == True)
+                                Person.is_officer == True,
+                                # A visiting organization's officers print in
+                                # their own group, ordered automatically --
+                                # never in our ranked officer list.
+                                Person.affiliation.is_(None))
                         .all())
     guest_officers = (RSVPGuest.query.join(RSVP, RSVPGuest.rsvp_id == RSVP.id)
                        .filter(RSVP.event_id == event_id,
@@ -1452,6 +1459,135 @@ def _person_section_lines(people, confirmed_person_ids, paired_ids):
     return lines
 
 
+def _guest_lines(rsvps):
+    """'Guest(s) of <host>: ...' lines for the ad-hoc guests on these RSVPs,
+    skipping any guest marked as a visiting officer (those print with the
+    officers instead)."""
+    guests_by_host = {}
+    for r in rsvps:
+        for g in r.guests:
+            if g.is_officer:
+                continue
+            guests_by_host.setdefault(r.person.display_name, []).append(g)
+
+    lines = []
+    for host_name, guests in guests_by_host.items():
+        names = []
+        for g in guests:
+            if g.gender == "F":
+                names.append(f"Mme. {g.display_name}")
+            elif g.gender == "M":
+                names.append(f"M. {g.display_name}")
+            else:
+                names.append(g.display_name)
+        label = "Guest of" if len(guests) == 1 else "Guests of"
+        lines.append(f"{label} {host_name}: {' et '.join(names)}")
+    return lines
+
+
+def _partner_logo_path(event):
+    from .events import partner_logo_path
+    try:
+        return partner_logo_path(event)
+    except Exception:
+        return None
+
+
+def _is_maitre(role):
+    """Whether an officer title is the visiting commanderie's Maitre -- the
+    one title that always prints first in their group. Accent- and
+    case-insensitive, so "Maitre", "Maître" and "MAITRE" all match."""
+    import unicodedata
+    if not role:
+        return False
+    bare = unicodedata.normalize("NFKD", role).encode("ascii", "ignore").decode().lower()
+    return "maitre" in bare
+
+
+def _visitor_group_lines(visitor_rsvps, confirmed_person_ids, org_name):
+    """The visiting organization's block of the attendee list: their
+    officers first (Maitre on top, then the others alphabetically), then
+    everyone else under "Commandeurs" alphabetically, then their guests.
+    Couples print together on one line, same as ours. Titles print in the
+    partner's color (see gen_menu_booklet.PARTNER_BLUE_HEX).
+
+    Title rules within the group: an officer shows their officer title; any
+    other visitor who is a member of their organization in their own right
+    (entered here as Honoraire, or Member/Aspirant) shows "Commandeur"; a
+    spouse entered as a plain Partner gets Mme./M. instead."""
+    import os as _os, sys as _sys
+    project_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(__file__)))
+    if project_root not in _sys.path:
+        _sys.path.insert(0, project_root)
+    import gen_menu_booklet as _gmb
+    blue = _gmb.PARTNER_BLUE_HEX
+
+    def title_for(p):
+        if p.is_officer:
+            return p.officer_role or "Officier"
+        if p.person_type in ("honoraire", "member", "aspirant",
+                             "partner_member_chevalier", "partner_non_member_chevalier"):
+            return "Commandeur"
+        return None
+
+    def honorific_for(p):
+        return {"F": "Mme.", "M": "M."}.get(p.gender)
+
+    def rank(p):
+        # Officer (Maitre first) > Commandeur > plain spouse; then men first.
+        if p.is_officer:
+            tier = 0 if _is_maitre(p.officer_role) else 1
+        elif title_for(p):
+            tier = 2
+        else:
+            tier = 3
+        return (tier, 0 if p.gender == "M" else 1)
+
+    def line_for(p, partner):
+        if partner is not None and rank(partner) < rank(p):
+            p, partner = partner, p
+        t = title_for(p)
+        kwargs = dict(title_color=blue)
+        if partner is None:
+            return _gmb.attendee_line_markup(t, p.display_name,
+                                             primary_honorific=None if t else honorific_for(p),
+                                             **kwargs)
+        pt = title_for(partner)
+        return _gmb.attendee_line_markup(
+            t, p.display_name,
+            None if pt else honorific_for(partner), pt, partner.display_name,
+            primary_honorific=None if t else honorific_for(p), **kwargs)
+
+    people = [r.person for r in visitor_rsvps]
+    alpha = lambda p: ((p.last_name or "").lower(), (p.first_name or "").lower())
+    officers_people = sorted([p for p in people if p.is_officer],
+                             key=lambda p: (0 if _is_maitre(p.officer_role) else 1,) + alpha(p))
+    others = sorted([p for p in people if not p.is_officer], key=alpha)
+
+    done = set()
+
+    def build(pool):
+        lines = []
+        for p in pool:
+            if p.id in done:
+                continue
+            partner = p.partner if (p.partner_id and p.partner_id in confirmed_person_ids) else None
+            lines.append(line_for(p, partner))
+            done.add(p.id)
+            if partner is not None:
+                done.add(partner.id)
+        return lines
+
+    officers = build(officers_people)
+    commandeurs = build(others)
+    return {
+        "name": org_name,
+        "officers": officers,
+        "commandeurs": commandeurs,
+        "guest_lines": _guest_lines(visitor_rsvps),
+    }
+
+
 def build_booklet_data(event):
     """Assembles the full data dict gen_menu_booklet.generate() needs,
     pulling from confirmed RSVPs, wine tags, menu items, course labels,
@@ -1475,12 +1611,18 @@ def build_booklet_data(event):
                               for r in confirmed_rsvps if r.officer_rank is not None}
 
     # -- Officers: member officers (ranked) + guest officers (ranked) --
+    # Joint events: anyone from the visiting organization (their own
+    # affiliation, or their linked spouse's) is set aside here and printed
+    # in that organization's own group further down -- never in ours.
+    visitor_rsvps = [r for r in confirmed_rsvps if r.person.effective_affiliation]
+    our_rsvps = [r for r in confirmed_rsvps if not r.person.effective_affiliation]
+
     officer_entries = []
-    for r in confirmed_rsvps:
+    for r in our_rsvps:
         p = r.person
         if p.is_officer and r.officer_rank is not None:
             officer_entries.append((r.officer_rank, "rsvp", r))
-    for r in confirmed_rsvps:
+    for r in our_rsvps:
         for g in r.guests:
             if g.is_officer and g.officer_rank is not None:
                 officer_entries.append((g.officer_rank, "guest", g))
@@ -1519,38 +1661,32 @@ def build_booklet_data(event):
     # -- this is what lets a partner who attends WITHOUT their Cleveland-
     # member spouse still show up with the correct title (or no title, for
     # a plain partner), rather than only appearing when paired.
+    #
+    # An officer who WAS ranked has already been placed above (and is in
+    # paired_ids, so _person_section_lines skips them). An officer who
+    # wasn't ranked for this event now simply prints in their regular
+    # section -- previously they dropped out of the booklet entirely.
     chevalier_pool_types = ("member", "partner", "partner_member_chevalier", "partner_non_member_chevalier")
-    members_people = [r.person for r in confirmed_rsvps
-                      if r.person.person_type in chevalier_pool_types and not r.person.is_officer]
-    honoraire_people = [r.person for r in confirmed_rsvps
-                        if r.person.person_type == "honoraire" and not r.person.is_officer]
-    aspirant_people = [r.person for r in confirmed_rsvps
-                       if r.person.person_type == "aspirant" and not r.person.is_officer]
+    members_people = [r.person for r in our_rsvps
+                      if r.person.person_type in chevalier_pool_types]
+    honoraire_people = [r.person for r in our_rsvps
+                        if r.person.person_type == "honoraire"]
+    aspirant_people = [r.person for r in our_rsvps
+                       if r.person.person_type == "aspirant"]
 
     members = _person_section_lines(members_people, confirmed_person_ids, paired_ids)
     honoraires = _person_section_lines(honoraire_people, confirmed_person_ids, paired_ids)
     aspirants = _person_section_lines(aspirant_people, confirmed_person_ids, paired_ids)
 
     # -- Guests, grouped by host, excluding those marked as officers (shown above instead) --
-    guests_by_host = {}
-    for r in confirmed_rsvps:
-        for g in r.guests:
-            if g.is_officer:
-                continue
-            guests_by_host.setdefault(r.person.display_name, []).append(g)
+    guest_lines = _guest_lines(our_rsvps)
 
-    guest_lines = []
-    for host_name, guests in guests_by_host.items():
-        names = []
-        for g in guests:
-            if g.gender == "F":
-                names.append(f"Mme. {g.display_name}")
-            elif g.gender == "M":
-                names.append(f"M. {g.display_name}")
-            else:
-                names.append(g.display_name)
-        label = "Guest of" if len(guests) == 1 else "Guests of"
-        guest_lines.append(f"{label} {host_name}: {' et '.join(names)}")
+    # -- Visiting organization's group (joint events only) --
+    partner_group = None
+    if visitor_rsvps:
+        partner_group = _visitor_group_lines(
+            visitor_rsvps, confirmed_person_ids,
+            event.partner_org_name or visitor_rsvps[0].person.effective_affiliation)
 
     # -- Wines and menu, grouped by course, with course labels --
     course_labels = {c.course: c.label for c in event.courses}
@@ -1602,6 +1738,12 @@ def build_booklet_data(event):
         "chef_name": _short_text(event.chef_name),
         "hosts": _short_text(event.hosts),
         "logo_path": logo_path,
+        "partner_org_name": event.partner_org_name,
+        "partner_logo_path": _partner_logo_path(event),
+        "partner_group": partner_group,
+        # A Paulee (or any event with no wine list): the attendee list
+        # moves inside to the wine panel, and the back cover prints blank.
+        "attendees_inside": not wine_courses,
         "officers": officers,
         "members": members,
         "honoraires": honoraires,
@@ -1787,9 +1929,16 @@ def _get_event_couples(event):
 
     couples = []
     seen = set()
+    # No person_type restriction here -- every valid Person type (member,
+    # honoraire, aspirant, partner, partner_member_chevalier,
+    # partner_non_member_chevalier) can be one half of a couple, and the
+    # pair-dedup below via `seen` already prevents double-counting. An
+    # earlier version filtered this to ("member", "partner") only, which
+    # silently dropped any couple where BOTH sides were typed something
+    # else -- e.g. two Honoraires married to each other -- out of the
+    # dropdown entirely, with no error and no visible sign why.
     persons = Person.query.filter(
-        Person.partner_id.isnot(None),
-        Person.person_type.in_(["member", "partner"])
+        Person.partner_id.isnot(None)
     ).all()
 
     for p in persons:
@@ -1799,7 +1948,10 @@ def _get_event_couples(event):
             if p.id in confirmed_ids or p.partner_id in confirmed_ids:
                 seen.add(pair)
                 partner = Person.query.get(p.partner_id)
-                if partner:
+                both_confirmed = (partner is not None
+                                   and p.id in confirmed_ids
+                                   and p.partner_id in confirmed_ids)
+                if both_confirmed:
                     # Deterministic ordering: always the alphabetically-first
                     # last name leads the label, regardless of which of the
                     # two happened to come first in this unordered query --
@@ -1819,6 +1971,23 @@ def _get_event_couples(event):
                                         if first.last_name != second.last_name
                                         else f"{first.display_name} & {second.display_name}",
                     })
+                else:
+                    # Only one side of this recorded couple is actually
+                    # confirmed for this event (or the partner_id points to
+                    # a Person record that no longer exists) -- the
+                    # dropdown should reflect who's really attending, not
+                    # who's on file as a couple, so show the confirmed
+                    # person alone rather than pairing them with someone
+                    # who isn't seated.
+                    attending = p if p.id in confirmed_ids else partner
+                    if attending:
+                        couples.append({
+                            "id":           attending.id,
+                            "name":         attending.display_name,
+                            "partner_id":   None,
+                            "partner_name": None,
+                            "couple_label": attending.display_name,
+                        })
 
     # Singles: confirmed attendees with no linked partner at all. Without
     # this, members/honoraires/aspirants who aren't part of a recorded

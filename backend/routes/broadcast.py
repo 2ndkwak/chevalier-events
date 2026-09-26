@@ -56,7 +56,8 @@ def compose():
 
     persons = (Person.query
                .filter(Person.person_type.in_(ADHOC_ELIGIBLE_TYPES),
-                       Person.email.isnot(None))
+                       Person.email.isnot(None),
+                       Person.affiliation.is_(None))   # never email joint-event visitors
                .order_by(Person.last_name, Person.first_name)
                .all())
 

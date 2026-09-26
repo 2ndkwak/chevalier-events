@@ -72,4 +72,42 @@
     <p style="color:var(--ink-muted); font-style:italic;">No upcoming events at this time.</p>
   </div>
 {% endif %}
+
+{% if past_events %}
+<div class="page-header" style="margin-top:2rem;">
+  <h1 style="font-size:1.4rem;">Recent Past Events</h1>
+</div>
+{% for event in past_events %}
+<div class="card" style="opacity:.85;">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:1rem;">
+    <div>
+      <h2 style="font-size:1.1rem; font-weight:normal; color:var(--burgundy-dk); letter-spacing:.03em;">
+        {{ event.title }}
+      </h2>
+      <div style="margin-top:.3rem; font-family:sans-serif; font-size:.82rem; color:var(--ink-muted);">
+        {{ event.event_date.strftime("%A, %B %d, %Y") }}
+        {% if event.venue_name %}
+          &nbsp;·&nbsp; {{ event.venue_name }}
+        {% endif %}
+      </div>
+    </div>
+    <div style="text-align:right; white-space:nowrap;">
+      <div style="font-size:.7rem; letter-spacing:.1em; text-transform:uppercase;
+                  color:var(--ink-muted); font-family:sans-serif;">Price per person</div>
+      <div style="font-size:1rem; color:var(--ink-mid);">
+        {% if event.price_per_person %}
+          ${{ "%.2f"|format(event.price_per_person|float) }}
+        {% else %}
+          <span class="text-muted">--</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <hr class="gold-rule" style="margin:.6rem 0;">
+  <div style="display:flex; justify-content:flex-end;">
+    <a href="{{ url_for('portal.event_detail', event_id=event.id) }}" class="btn btn-outline btn-sm">View details</a>
+  </div>
+</div>
+{% endfor %}
+{% endif %}
 {% endblock %}

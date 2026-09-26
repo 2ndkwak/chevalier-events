@@ -1,9 +1,11 @@
 from flask import (Blueprint, render_template, redirect, url_for,
-                   request, flash)
+                   request, flash, send_file, abort)
 from flask_login import login_required, current_user
-from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag
+from ..models import (db, Event, RSVP, RSVPGuest, Person, DietaryTag,
+                      EventUpload, MAX_UPLOAD_SIZE_BYTES)
 from ..waitlist import promote_from_waitlist
 from datetime import date
+import os
 
 portal_bp = Blueprint("portal", __name__)
 
@@ -19,9 +21,22 @@ def home():
                       Event.event_date >= today_start)
               .order_by(Event.event_date.asc())
               .all())
+    # Read-only "recent past" list -- last 4 archived events regardless of
+    # whether this member RSVP'd, so they can look up what an event cost
+    # even for ones they skipped. No payment-status shown here: RSVP.
+    # payment_status/amount_paid aren't actually kept current (tracked on
+    # paper by the argentier instead), so surfacing them would mislead
+    # members rather than help them reconcile what they owe.
+    past_events = (Event.query
+                   .filter(Event.is_published == True,
+                           Event.event_date < today_start)
+                   .order_by(Event.event_date.desc())
+                   .limit(4)
+                   .all())
     my_rsvps = {r.event_id: r for r in
                 RSVP.query.filter_by(person_id=current_user.id).all()}
-    return render_template("portal/home.html", events=events, my_rsvps=my_rsvps,
+    return render_template("portal/home.html", events=events,
+                           past_events=past_events, my_rsvps=my_rsvps,
                            now=_dt.utcnow())
 
 @portal_bp.route("/event/<int:event_id>")
@@ -64,6 +79,17 @@ def rsvp(event_id):
         # button, not hide it behind a false "Already RSVP'd" pill.
         if candidate and candidate.status not in ("declined", "expired"):
             partner_rsvp = candidate
+
+    # Sep 2026: archived events are now directly reachable from the portal's
+    # "Recent Past Events" list, not just a guessed URL -- block edits here
+    # too, mirroring the admin-side lock in events.py, rather than relying
+    # solely on rsvp_deadline (which may be unset or predate the event date
+    # in older data).
+    if event.is_archived:
+        flash("This event has already taken place, so its reservation can't "
+              "be changed. Contact your Grand Sénéchal if something needs "
+              "correcting.", "error")
+        return redirect(url_for("portal.event_detail", event_id=event_id))
 
     # Enforce deadline -- block new RSVPs and cancellations after close time
     from datetime import datetime as dt
@@ -326,7 +352,8 @@ def members_list():
     ]
 
     primaries = Person.query.filter(
-        Person.person_type.in_(["member", "honoraire", "aspirant"])
+        Person.person_type.in_(["member", "honoraire", "aspirant"]),
+        Person.affiliation.is_(None),   # joint-event visitors aren't in our directory
     ).all()
 
     grouped = {key: [] for key, _ in GROUP_LABELS}
@@ -442,3 +469,123 @@ def _notify_admin(action, event, person):
         send_admin_rsvp_notification(event, person, action)
     except Exception:
         pass
+
+
+# --- PHOTOS & DOCUMENTS GALLERY (Sep 2026) ----------------------------------
+# Deliberately its own index, separate from the Upcoming/Recent Past Events
+# lists on home() -- this is a browsing view (like a photo album), not tied
+# to the archive-visibility cutoff those lists use. Every published event
+# shows here regardless of date, newest first, whether or not the member
+# ever RSVP'd to it.
+
+@portal_bp.route("/photos")
+@login_required
+def photos_index():
+    events = (Event.query
+              .filter(Event.is_published == True)
+              .order_by(Event.event_date.asc())
+              .all())
+    return render_template("portal/photos_index.html", events=events)
+
+
+@portal_bp.route("/photos/<int:event_id>")
+@login_required
+def photos_event(event_id):
+    event = Event.query.get_or_404(event_id)
+    if not event.is_published:
+        abort(404)
+    uploads = event.uploads  # already ordered newest-first via the relationship
+    return render_template("portal/photos_event.html", event=event, uploads=uploads,
+                           max_size_mb=MAX_UPLOAD_SIZE_BYTES // (1024 * 1024))
+
+
+@portal_bp.route("/photos/<int:event_id>/upload", methods=["POST"])
+@login_required
+def photos_upload(event_id):
+    event = Event.query.get_or_404(event_id)
+    if not event.is_published:
+        abort(404)
+
+    file = request.files.get("upload_file")
+    if not file or not file.filename:
+        flash("Please choose a file to upload.", "error")
+        return redirect(url_for("portal.photos_event", event_id=event_id))
+
+    from ..uploads import allowed_extension, signature_matches, save_upload_file
+
+    ext = allowed_extension(file.filename)
+    if not ext:
+        flash("That file type isn't allowed. Photos (jpg, png, heic), PDF, "
+              "Word (.docx), or Pages (.pages) only.", "error")
+        return redirect(url_for("portal.photos_event", event_id=event_id))
+
+    # Check actual size (server-side, not just trusting the browser) --
+    # read into memory only enough to check, then seek back to save fully.
+    file.stream.seek(0, os.SEEK_END)
+    size = file.stream.tell()
+    file.stream.seek(0)
+    if size > MAX_UPLOAD_SIZE_BYTES:
+        flash(f"That file is too large -- 20 MB max.", "error")
+        return redirect(url_for("portal.photos_event", event_id=event_id))
+    if size == 0:
+        flash("That file appears to be empty.", "error")
+        return redirect(url_for("portal.photos_event", event_id=event_id))
+
+    header = file.stream.read(32)
+    file.stream.seek(0)
+    if not signature_matches(ext, header):
+        flash("That file's contents don't match its extension -- please "
+              "check the file and try again.", "error")
+        return redirect(url_for("portal.photos_event", event_id=event_id))
+
+    stored_filename, file_size = save_upload_file(file, ext)
+
+    upload = EventUpload(
+        event_id=event_id,
+        uploaded_by_id=current_user.id,
+        original_filename=file.filename,
+        stored_filename=stored_filename,
+        content_type=file.content_type or "application/octet-stream",
+        file_size=file_size,
+    )
+    db.session.add(upload)
+    db.session.commit()
+    flash(f"'{file.filename}' uploaded.", "success")
+    return redirect(url_for("portal.photos_event", event_id=event_id))
+
+
+@portal_bp.route("/photos/<int:event_id>/<int:upload_id>/download")
+@login_required
+def photos_download(event_id, upload_id):
+    # login_required is the entire access control here, by design: any
+    # member can view any event's uploads, matching the agreed "visible to
+    # all members" behavior. There is no other URL to these files -- they
+    # live outside static/, so this route is the only path in.
+    upload = EventUpload.query.filter_by(id=upload_id, event_id=event_id).first_or_404()
+    from ..uploads import upload_dir
+    return send_file(
+        os.path.join(upload_dir(), upload.stored_filename),
+        mimetype=upload.content_type,
+        as_attachment=not upload.is_image,
+        download_name=upload.original_filename,
+    )
+
+
+@portal_bp.route("/photos/<int:event_id>/<int:upload_id>/delete", methods=["POST"])
+@login_required
+def photos_delete(event_id, upload_id):
+    # Admin-only, deliberately -- not even the person who uploaded it, per
+    # the original design decision. Enforced here explicitly rather than
+    # relying on the button simply not rendering for non-admins in the
+    # template, since a non-admin could otherwise POST directly to this URL.
+    if not current_user.is_admin:
+        abort(403)
+    upload = EventUpload.query.filter_by(id=upload_id, event_id=event_id).first_or_404()
+    from ..uploads import delete_upload_file
+    delete_upload_file(upload.stored_filename)
+    filename = upload.original_filename
+    db.session.delete(upload)
+    db.session.commit()
+    flash(f"'{filename}' deleted.", "success")
+    return redirect(url_for("portal.photos_event", event_id=event_id))
+

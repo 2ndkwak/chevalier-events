@@ -124,6 +124,22 @@
     <div class="card" style="border-top-color:var(--gold); position:sticky; top:1rem;">
       <div class="card-title">Your reservation</div>
 
+      {% if event.is_archived %}
+        <div style="text-align:center; padding:.8rem 0;">
+          {% if my_rsvp and my_rsvp.status == 'confirmed' %}
+            <div style="font-size:1.3rem; color:var(--ink-muted);">✓</div>
+            <div style="font-family:sans-serif; font-size:.82rem; color:var(--ink-muted);
+                        margin-top:.3rem;">You attended this event</div>
+          {% else %}
+            <div style="font-size:1.3rem; color:var(--ink-muted);">🗓</div>
+            <div style="font-family:sans-serif; font-size:.82rem; color:var(--ink-muted);
+                        margin-top:.3rem;">This event has passed</div>
+          {% endif %}
+          <div class="text-muted text-sm" style="margin-top:.4rem;">
+            Reservations are closed. Contact your Grand Sénéchal with any questions.
+          </div>
+        </div>
+      {% else %}
       {% set rsvp_closed = event.rsvp_deadline and event.rsvp_deadline < now %}
       {% if rsvp_closed and not (my_rsvp and my_rsvp.status == 'confirmed') %}
         <div style="text-align:center; padding:.8rem 0;">
@@ -229,6 +245,7 @@
             RSVP now
           </a>
         {% endif %}
+      {% endif %}
       {% endif %}
     </div>
   </div>

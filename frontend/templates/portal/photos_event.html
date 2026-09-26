@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} — Photos & Documents{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>{{ event.title }}</h1>
+  <a href="{{ url_for('portal.photos_index') }}" class="btn btn-outline">← Back to Photos &amp; Documents</a>
+</div>
+<p class="text-muted text-sm" style="margin-top:-.5rem; margin-bottom:1.2rem;">
+  {{ event.event_date.strftime("%A, %B %d, %Y") }}
+  {% if event.venue_name %}&nbsp;·&nbsp; {{ event.venue_name }}{% endif %}
+</p>
+
+<div class="card">
+  <div class="card-title">Add a photo or document</div>
+  <p class="text-muted text-sm" style="margin-bottom:1rem;">
+    Images (jpg, png, heic), PDF, Word (.docx), or Pages (.pages) — 20 MB max.
+    Everyone can view what's uploaded here; only an admin can remove a file.
+  </p>
+  <form method="POST" enctype="multipart/form-data"
+        action="{{ url_for('portal.photos_upload', event_id=event.id) }}">
+    <div style="display:flex; gap:.6rem; align-items:center; flex-wrap:wrap;">
+      <input type="file" name="upload_file" accept=".jpg,.jpeg,.png,.heic,.pdf,.docx,.pages"
+             style="font-family:sans-serif; font-size:.88rem;">
+      <button type="submit" class="btn btn-primary">Upload</button>
+    </div>
+  </form>
+</div>
+
+{% set images = uploads|selectattr('is_image')|list %}
+{% set documents = uploads|rejectattr('is_image')|list %}
+
+{% if images %}
+<div class="card">
+  <div class="card-title">Photos ({{ images|length }})</div>
+  <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:.8rem;">
+    {% for upload in images %}
+    <div style="text-align:center;">
+      <a href="{{ url_for('portal.photos_download', event_id=event.id, upload_id=upload.id) }}" target="_blank">
+        <img src="{{ url_for('portal.photos_download', event_id=event.id, upload_id=upload.id) }}"
+             alt="{{ upload.original_filename }}"
+             style="width:100%; height:130px; object-fit:cover; border-radius:4px;
+                    border:1px solid var(--parchment-dk);">
+      </a>
+      <div class="text-muted text-sm" style="margin-top:.3rem; word-break:break-word;">
+        {{ upload.original_filename }}
+      </div>
+      {% if current_user.is_admin %}
+      <form method="POST" style="margin-top:.3rem;"
+            action="{{ url_for('portal.photos_delete', event_id=event.id, upload_id=upload.id) }}"
+            onsubmit="return confirm('Delete {{ upload.original_filename }}? This can\'t be undone.');">
+        <button type="submit" class="btn btn-danger btn-sm" style="width:100%;">Delete</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if documents %}
+<div class="card">
+  <div class="card-title">Documents ({{ documents|length }})</div>
+  <table style="width:100%; font-size:.88rem;">
+    <thead>
+      <tr style="text-align:left; color:var(--ink-muted); font-family:sans-serif; font-size:.75rem;
+                 text-transform:uppercase; letter-spacing:.05em;">
+        <th style="padding-bottom:.5rem;">File</th>
+        <th style="padding-bottom:.5rem;">Uploaded by</th>
+        <th style="padding-bottom:.5rem;">Size</th>
+        <th style="padding-bottom:.5rem;"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for upload in documents %}
+      <tr style="border-top:1px solid var(--parchment-dk);">
+        <td style="padding:.5rem 0;">
+          <a href="{{ url_for('portal.photos_download', event_id=event.id, upload_id=upload.id) }}">
+            📄 {{ upload.original_filename }}
+          </a>
+        </td>
+        <td class="text-muted">{{ upload.uploaded_by.display_name if upload.uploaded_by else "—" }}</td>
+        <td class="text-muted">{{ "%.1f"|format(upload.file_size / 1024 / 1024) }} MB</td>
+        <td style="text-align:right;">
+          {% if current_user.is_admin %}
+          <form method="POST" style="display:inline;"
+                action="{{ url_for('portal.photos_delete', event_id=event.id, upload_id=upload.id) }}"
+                onsubmit="return confirm('Delete {{ upload.original_filename }}? This can\'t be undone.');">
+            <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if not uploads %}
+<div class="card" style="text-align:center; padding:3rem;">
+  <p style="color:var(--ink-muted); font-style:italic;">Nothing uploaded yet — be the first!</p>
+</div>
+{% endif %}
+{% endblock %}

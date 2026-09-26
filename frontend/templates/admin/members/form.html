@@ -88,6 +88,19 @@
              value="{{ person.officer_role or '' if person else '' }}">
     </div>
 
+    {# Joint-event visitor #}
+    <div class="form-group" style="max-width:420px; margin-bottom:1rem;">
+      <label for="affiliation">Affiliation (visitors from another organization only)</label>
+      <input type="text" id="affiliation" name="affiliation"
+             placeholder="Leave blank for our own members"
+             value="{{ person.affiliation or '' if person else '' }}">
+      <p class="text-muted text-sm" style="margin:.3rem 0 0;">
+        For someone entered only to attend a joint event, e.g. <em>Commanderie de Bordeaux</em>.
+        They can RSVP and be seated as usual, but are left out of our directory, dashboard counts,
+        officer ranking, emails and portal invitations. A linked spouse inherits it automatically.
+      </p>
+    </div>
+
     {# Admin toggle — only show when editing existing record #}
     {% if person %}
     <div class="checkbox-row" style="margin-bottom:.8rem; padding:.7rem 1rem;

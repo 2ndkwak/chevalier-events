@@ -43,6 +43,11 @@ def list_members():
                    Person.email.ilike(like),
                    Person.officer_role.ilike(like))
         )
+    if ftype == "visitor":
+        # People from another organization, entered only for a joint event
+        query = query.filter(Person.affiliation.isnot(None))
+    else:
+        query = query.filter(Person.affiliation.is_(None))
     if ftype in ('member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier'):
         query = query.filter_by(person_type=ftype)
 
@@ -160,6 +165,11 @@ def link_partner(person_id):
         # Set mutual link
         person.partner_id  = partner.id
         partner.partner_id = person.id
+        # A visitor's spouse belongs to the same visiting group
+        if person.affiliation and not partner.affiliation:
+            partner.affiliation = person.affiliation
+        elif partner.affiliation and not person.affiliation:
+            person.affiliation = partner.affiliation
         db.session.commit()
         flash(f"{person.display_name} linked with {partner.display_name}.", "success")
     else:
@@ -190,6 +200,7 @@ def create_partner(person_id):
 
     member.partner_id  = partner.id
     partner.partner_id = member.id
+    partner.affiliation = member.affiliation   # a visitor's spouse is a visitor too
     db.session.commit()
     flash(f"{partner.display_name} created and linked to {member.display_name}.", "success")
     return redirect(url_for("members.edit_member", person_id=person_id))
@@ -367,6 +378,15 @@ def _person_from_form(person, form):
     person.is_officer     = bool(form.get("is_officer"))
     person.officer_role   = form.get("officer_role", "").strip() or None
     person.is_admin       = bool(form.get("is_admin"))
+    # Only touched when the field is actually on the submitted form -- the
+    # "create partner" mini-form doesn't carry it, and must not wipe it.
+    if "affiliation" in form:
+        person.affiliation = form.get("affiliation", "").strip() or None
+        # An already-linked spouse joins the same visiting group, so the
+        # email/directory filters (which check each person's own field)
+        # catch them too.
+        if person.affiliation and person.partner is not None and not person.partner.affiliation:
+            person.partner.affiliation = person.affiliation
 
     allergy_labels = form.get("allergy_tags", "").split(",")
     DietaryTag.set_from_labels(person, allergy_labels)
@@ -538,6 +558,7 @@ def bulk_invite():
         Person.can_login == False,
         Person.invite_token.is_(None),
         Person.person_type.in_(["member", "honoraire", "aspirant"]),
+        Person.affiliation.is_(None),   # joint-event visitors never get portal invites
     ).all()
 
     if not candidates:
@@ -652,7 +673,8 @@ def members_pdf():
     ]
 
     all_persons = Person.query.filter(
-        Person.person_type.in_(['member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier'])
+        Person.person_type.in_(['member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier']),
+        Person.affiliation.is_(None),   # joint-event visitors aren't in our directory
     ).order_by(Person.last_name, Person.first_name).all()
 
     heading_style = ParagraphStyle("heading",

@@ -36,6 +36,10 @@ INK = colors.HexColor("#1E1208")
 INK_HEX = "#1E1208"
 MUTED = colors.HexColor("#7A6650")
 RED_WINE_HEX = "#6B1A2A"
+# Joint events: the visiting organization's titles and heading initials.
+# Matched to the blue field of the Commanderie de Bordeaux crest.
+PARTNER_BLUE = colors.HexColor("#0050A0")
+PARTNER_BLUE_HEX = "#0050A0"
 
 PAGE_W, PAGE_H = landscape(letter)  # 11in x 8.5in
 MARGIN = 0.45 * inch
@@ -67,7 +71,7 @@ def register_font(font_path):
     return "Times-Roman"
 
 
-def header_markup(text):
+def header_markup(text, accent_hex=BURGUNDY_HEX):
     """First letter of each major word in burgundy. Minor connector words
     (et, de, des, du, la, le, les...) are skipped -- EXCEPT the very first
     word of the line, which always gets colored even if it's normally a
@@ -84,13 +88,13 @@ def header_markup(text):
             out.append(word)
             continue
         first, rest = word[0], word[1:]
-        out.append(f'<font color="{BURGUNDY_HEX}">{first}</font>{rest}')
+        out.append(f'<font color="{accent_hex}">{first}</font>{rest}')
     return " ".join(out)
 
 
 def attendee_line_markup(primary_title, primary_name,
                          partner_honorific=None, partner_title=None, partner_name=None,
-                         primary_honorific=None):
+                         primary_honorific=None, title_color=BURGUNDY_HEX):
     """Title and honorific (Mme./M.) are always mutually exclusive, for
     both the primary and partner slot -- anyone with a title (an officer
     role, or independent Chevalier/Aspirant standing) is shown with that
@@ -100,7 +104,7 @@ def attendee_line_markup(primary_title, primary_name,
     this function just lays out whichever was given."""
     parts = []
     if primary_title:
-        parts.append(f'<font color="{BURGUNDY_HEX}">{primary_title}</font>')
+        parts.append(f'<font color="{title_color}">{primary_title}</font>')
     elif primary_honorific:
         parts.append(primary_honorific)
     parts.append(primary_name)
@@ -109,7 +113,7 @@ def attendee_line_markup(primary_title, primary_name,
     if partner_name:
         tail = ["et"]
         if partner_title:
-            tail.append(f'<font color="{BURGUNDY_HEX}">{partner_title}</font>')
+            tail.append(f'<font color="{title_color}">{partner_title}</font>')
         elif partner_honorific:
             tail.append(partner_honorific)
         tail.append(partner_name)
@@ -236,10 +240,27 @@ def _body_style(scale, font_name):
     )
 
 
+def _group_style(scale, font_name):
+    """Group heading for joint events ("Chevaliers du Tastevin" / the
+    visiting organization) -- a step larger than the section headings
+    beneath it, not underlined, so the two levels read as distinct."""
+    return ParagraphStyle(
+        "group", fontName=font_name, fontSize=13 * scale,
+        leading=16 * scale, textColor=INK, alignment=TA_CENTER,
+        spaceBefore=12 * scale, spaceAfter=2 * scale,
+    )
+
+
 def build_attendee_flowables(data, scale, font_name):
     hstyle = _header_style(scale, font_name)
     bstyle = _body_style(scale, font_name)
     flows = []
+
+    partner = data.get("partner_group")
+    if partner:
+        gstyle = _group_style(scale, font_name)
+        first_group = ParagraphStyle("group_first", parent=gstyle, spaceBefore=2 * scale)
+        flows.append(Paragraph(header_markup("Chevaliers du Tastevin"), first_group))
 
     sections = [
         ("Les Commandeurs et les Officiers", data.get("officers", [])),
@@ -254,6 +275,24 @@ def build_attendee_flowables(data, scale, font_name):
         flows.append(Paragraph(f"<u>{header_markup(label)}</u>", hstyle))
         for line_markup in lines:
             flows.append(Paragraph(line_markup, bstyle))
+
+    if partner:
+        # The visiting organization's block: its name as the group heading,
+        # its officers directly beneath (Maitre first -- no separate
+        # heading, the titles speak for themselves), then Commandeurs, then
+        # their guests. Initials and titles in the partner's blue.
+        flows.append(Paragraph(header_markup(partner["name"], PARTNER_BLUE_HEX),
+                               _group_style(scale, font_name)))
+        officer_spacer = ParagraphStyle("pofficers", parent=bstyle, spaceBefore=4 * scale)
+        for i, line_markup in enumerate(partner.get("officers", [])):
+            flows.append(Paragraph(line_markup, officer_spacer if i == 0 else bstyle))
+        for label, lines in [("Commandeurs", partner.get("commandeurs", [])),
+                             ("Nos Convives", partner.get("guest_lines", []))]:
+            if not lines:
+                continue
+            flows.append(Paragraph(f"<u>{header_markup(label, PARTNER_BLUE_HEX)}</u>", hstyle))
+            for line_markup in lines:
+                flows.append(Paragraph(line_markup, bstyle))
     return flows
 
 
@@ -397,6 +436,15 @@ def _measure_course0_heights(data):
     return measurer
 
 
+def _equal_area_sizes(paths, first_h):
+    """[(w, h) for ours, (w, h) for the partner's]: ours at height first_h,
+    theirs sized to the same visible artwork area (see logo_utils)."""
+    import logo_utils
+    our_w = first_h * logo_utils.aspect(paths[0])
+    return [(our_w, first_h),
+            logo_utils.partner_size_for(paths[0], our_w, first_h, paths[1])]
+
+
 def draw_cover(c, data, x, y, w, h, font_name):
     """Cover panel: logo vertically centered in the panel, org name block
     above it, event title/details below it, whole thing scaled to fill
@@ -406,20 +454,20 @@ def draw_cover(c, data, x, y, w, h, font_name):
     def line_width(text, size):
         return c.stringWidth(text, font_name, size)
 
-    def draw_header_line(cy, size, text):
+    def draw_header_line(cy, size, text, accent=BURGUNDY):
         words = text.split(" ")
         c.setFont(font_name, size)
         total_w = line_width(text, size)
         cx = x + w / 2 - total_w / 2
         for i, word in enumerate(words):
             bare = word.strip(",")
-            skip = (i > 0 and bare.lower() in MINOR_WORDS) or not bare
+            skip = (i > 0 and bare.lower() in MINOR_WORDS) or not bare or accent is None
             if skip:
                 c.setFillColor(INK)
                 c.drawString(cx, cy, word)
                 cx += line_width(word, size)
             else:
-                c.setFillColor(BURGUNDY)
+                c.setFillColor(accent)
                 c.drawString(cx, cy, word[0])
                 cx += line_width(word[0], size)
                 c.setFillColor(INK)
@@ -429,6 +477,9 @@ def draw_cover(c, data, x, y, w, h, font_name):
 
     top_lines = [(13, "Confrerie des Chevaliers du"), (13, "Tastevin"),
                 (13, "Sous-Commanderie de Cleveland")]
+    # Optional third element on a line = its accent color (None = all ink).
+    if data.get("partner_org_name"):
+        top_lines += [(11, "et", None), (13, data["partner_org_name"], PARTNER_BLUE)]
 
     bottom_lines = [(20, data["event_title"])] if data.get("event_title") else []
     if data.get("event_date_str"):
@@ -442,12 +493,21 @@ def draw_cover(c, data, x, y, w, h, font_name):
 
     logo_path = data.get("logo_path")
     has_logo = bool(logo_path and os.path.exists(logo_path))
+    partner_logo_path = data.get("partner_logo_path")
+    has_partner_logo = bool(has_logo and partner_logo_path and os.path.exists(partner_logo_path))
 
     def block_height(lines, scale, line_gap_factor):
-        return sum(size * scale * line_gap_factor for size, _ in lines)
+        return sum(ln[0] * scale * line_gap_factor for ln in lines)
 
     top_gap_factor, bottom_gap_factor = 1.3, 1.45
     base_logo_h = 1.6 * inch
+    if has_partner_logo:
+        # Two logos side by side, sized to equal visible artwork area (see
+        # logo_utils) so neither reads as the "bigger" organization. The row
+        # is a little shorter overall than a single logo, to leave room for
+        # the extra cover lines.
+        pair = _equal_area_sizes([logo_path, partner_logo_path], 1.35 * inch)
+        base_logo_h = max(h_ for _, h_ in pair)
     gap_above_logo, gap_below_logo = 0.15 * inch, 0.2 * inch
 
     def total_height_at(scale):
@@ -466,7 +526,7 @@ def draw_cover(c, data, x, y, w, h, font_name):
         all_lines = top_lines + bottom_lines
         if not all_lines:
             return 0
-        return max(line_width(text, size * scale) for size, text in all_lines)
+        return max(line_width(ln[1], ln[0] * scale) for ln in all_lines)
 
     available_w = w * 0.94  # small margin so text doesn't print flush to the panel edge
 
@@ -486,12 +546,27 @@ def draw_cover(c, data, x, y, w, h, font_name):
     logo_bottom = panel_center_y - logo_h / 2
 
     cy = logo_top + (gap_above_logo * scale if has_logo else 0) + top_h
-    for size, text in top_lines:
+    for ln in top_lines:
+        size, text = ln[0], ln[1]
+        accent = ln[2] if len(ln) > 2 else BURGUNDY
         line_h = size * scale * top_gap_factor
         cy -= line_h
-        draw_header_line(cy + line_h * 0.25, size * scale, text)
+        draw_header_line(cy + line_h * 0.25, size * scale, text, accent)
 
-    if has_logo:
+    if has_partner_logo:
+        gap = 0.25 * inch * scale
+        sizes = [(w_ * scale, h_ * scale) for w_, h_ in pair]
+        total_w = sum(w_ for w_, _ in sizes) + gap
+        lx = x + w / 2 - total_w / 2
+        for path, (lw, lh) in zip([logo_path, partner_logo_path], sizes):
+            try:
+                # Vertically centered on the logo row
+                c.drawImage(path, lx, panel_center_y - lh / 2, width=lw, height=lh,
+                            preserveAspectRatio=True, mask="auto")
+            except Exception:
+                pass
+            lx += lw + gap
+    elif has_logo:
         logo_w = logo_h * 0.85
         try:
             c.drawImage(logo_path, x + w / 2 - logo_w / 2, logo_bottom,
@@ -501,7 +576,8 @@ def draw_cover(c, data, x, y, w, h, font_name):
             pass
 
     cy = logo_bottom - (gap_below_logo * scale if has_logo else 0)
-    for size, text in bottom_lines:
+    for ln in bottom_lines:
+        size, text = ln[0], ln[1]
         line_h = size * scale * bottom_gap_factor
         cy -= line_h
         draw_header_line(cy + line_h * 0.25, size * scale, text)
@@ -515,8 +591,12 @@ def generate(data, font_path, output_path):
     right_x = PAGE_W / 2 + MARGIN * 0.5
     panel_y = MARGIN
 
-    draw_panel(c, lambda s, f: build_attendee_flowables(data, s, f),
-              left_x, panel_y, PANEL_W, PANEL_H, font_name, center_vertically=True)
+    inside = data.get("attendees_inside")
+    if not inside:
+        draw_panel(c, lambda s, f: build_attendee_flowables(data, s, f),
+                  left_x, panel_y, PANEL_W, PANEL_H, font_name, center_vertically=True)
+    # else: back cover deliberately left blank -- the attendee list prints
+    # inside, where the wines would normally go.
     draw_cover(c, data, right_x, panel_y, PANEL_W, PANEL_H, font_name)
 
     c.setStrokeColor(colors.HexColor("#DDDDDD"))
@@ -525,13 +605,19 @@ def generate(data, font_path, output_path):
     c.setDash()
     c.showPage()
 
-    draw_synced_panels(
-        c,
-        lambda s, f, off=0: build_wine_flowables(data, s, f, pre_course_spacer=off),
-        lambda s, f, off=0: build_menu_flowables(data, s, f, off),
-        left_x, right_x, panel_y, PANEL_W, PANEL_H, font_name,
-        _measure_course0_heights(data),
-    )
+    if inside:
+        draw_panel(c, lambda s, f: build_attendee_flowables(data, s, f),
+                  left_x, panel_y, PANEL_W, PANEL_H, font_name)
+        draw_panel(c, lambda s, f: build_menu_flowables(data, s, f),
+                  right_x, panel_y, PANEL_W, PANEL_H, font_name)
+    else:
+        draw_synced_panels(
+            c,
+            lambda s, f, off=0: build_wine_flowables(data, s, f, pre_course_spacer=off),
+            lambda s, f, off=0: build_menu_flowables(data, s, f, off),
+            left_x, right_x, panel_y, PANEL_W, PANEL_H, font_name,
+            _measure_course0_heights(data),
+        )
 
     c.setStrokeColor(colors.HexColor("#DDDDDD"))
     c.setDash(3, 3)

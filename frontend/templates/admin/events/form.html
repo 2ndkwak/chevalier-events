@@ -210,6 +210,46 @@
 </div>
 
 {% if event %}
+<!-- Joint event with another organization -->
+<div class="card">
+  <div class="card-title">Joint event with another organization</div>
+  <p class="text-muted text-sm" style="margin-bottom:1rem;">
+    Leave blank for a normal event. When filled in, the menu booklet cover names both organizations,
+    the attendee list is split into our group and theirs, and their logo prints beside ours on the
+    cover, table name cards and guest name badges. Their attendees are identified by the
+    <strong>Affiliation</strong> field on each person's record, which must match the name below.
+  </p>
+  <form method="POST" enctype="multipart/form-data"
+        action="{{ url_for('events.save_joint_settings', event_id=event.id) }}">
+    <div class="form-grid">
+      <div class="form-group">
+        <label for="partner_org_name">Partner organization name</label>
+        <input type="text" id="partner_org_name" name="partner_org_name"
+               placeholder="e.g. Commanderie de Bordeaux"
+               value="{{ event.partner_org_name or '' }}">
+      </div>
+      <div class="form-group">
+        <label for="partner_logo">Partner logo (JPG or PNG)</label>
+        <input type="file" id="partner_logo" name="partner_logo" accept=".jpg,.jpeg,.png">
+        {% if event.partner_logo_filename %}
+          <div style="margin-top:.5rem; display:flex; align-items:center; gap:.6rem;">
+            <img src="{{ url_for('events.partner_logo', event_id=event.id) }}" alt="Partner logo"
+                 style="height:60px; border:1px solid var(--parchment-md); border-radius:var(--radius);">
+            <span class="text-muted text-sm">Current logo -- choose a new file to replace it.</span>
+          </div>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex gap-1" style="margin-top:.8rem;">
+      <button type="submit" class="btn btn-primary btn-sm">Save joint-event settings</button>
+      {% if event.partner_org_name or event.partner_logo_filename %}
+        <button type="submit" name="clear" value="1" class="btn btn-outline btn-sm"
+                onclick="return confirm('Clear the partner organization from this event?')">Clear</button>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
 <!-- Danger zone -->
 <div class="card" style="border-color:#F5D5D5; border-top-color:var(--danger);">
   <div class="card-title" style="color:var(--danger);">Delete event</div>

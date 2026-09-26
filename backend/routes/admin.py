@@ -34,9 +34,11 @@ def dashboard():
     # Partner below), so each real person is counted exactly once toward
     # the "people involved in our Sous Commanderie" total.
     member_types = ("member", "partner_member_chevalier")
-    total_members   = Person.query.filter(Person.person_type.in_(member_types)).count()
-    total_honoraire = Person.query.filter_by(person_type="honoraire").count()
-    total_aspirants = Person.query.filter_by(person_type="aspirant").count()
+    # Joint-event visitors (affiliation set) are never counted as ours.
+    ours = Person.affiliation.is_(None)
+    total_members   = Person.query.filter(Person.person_type.in_(member_types), ours).count()
+    total_honoraire = Person.query.filter(Person.person_type == "honoraire", ours).count()
+    total_aspirants = Person.query.filter(Person.person_type == "aspirant", ours).count()
 
     # Partners: plain partners and non-member-Chevalier partners, counted
     # only when their spouse is one of our own members (person_type in
@@ -45,6 +47,7 @@ def dashboard():
     # counted as a Member above, not double-counted as her own partner).
     total_partners  = Person.query.filter(
         Person.person_type.in_(("partner", "partner_non_member_chevalier")),
+        ours,
         Person.partner_id.in_(
             Person.query.with_entities(Person.id).filter(Person.person_type.in_(member_types))
         )

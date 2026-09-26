@@ -138,6 +138,41 @@ Waitlist: {sum(1 for r in event.rsvps if r.status == 'waitlist')}
     _send(msg, sender_key="MAIL_SENDER_EVENTS")
 
 
+def send_gs_support_escalation(person, question, ai_answer, gs_note=None):
+    """Sep 2026: a GS clicked 'Escalate' on the admin-side AI support widget
+    because the AI's answer didn't help. Falls back to ADMIN_EMAIL if
+    GS_SUPPORT_ESCALATION_EMAIL isn't set, same reasoning as
+    send_admin_rsvp_notification -- better to reach the regular admin
+    inbox than silently drop the escalation because a newer setting was
+    never configured."""
+    to_email = (current_app.config.get("GS_SUPPORT_ESCALATION_EMAIL")
+                or current_app.config.get("ADMIN_EMAIL"))
+    if not to_email:
+        return
+
+    subject = f"[Chevalier Events] GS Support escalation from {person.display_name}"
+    body = f"""
+Chevalier Events -- GS Support Escalation
+==========================================
+
+From:    {person.display_name} ({person.email or 'no email on file'})
+
+Question:
+{question}
+
+AI's answer (didn't resolve it):
+{ai_answer}
+""".strip()
+
+    if gs_note:
+        body += f"\n\nNote from {person.first_name}:\n{gs_note}"
+
+    body += "\n\n-- Chevalier Events"
+
+    msg = Message(subject=subject, recipients=[to_email], body=body)
+    _send(msg, sender_key="MAIL_SENDER_EVENTS")
+
+
 def send_event_promotion(event, person, connection=None, extra_headers=None):
     """Send an event announcement email to a single member or partner.
     Sends both an HTML version (so a PayPal/payment link or any other

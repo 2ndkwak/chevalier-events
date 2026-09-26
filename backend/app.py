@@ -1,4 +1,4 @@
-from flask import Flask, redirect, url_for
+from flask import Flask, redirect, url_for, flash, request
 from .models import db
 from flask_login import LoginManager
 from flask_mail import Mail
@@ -38,6 +38,19 @@ def create_app(config=None):
         # feature.
         SQLALCHEMY_ENGINE_OPTIONS={"connect_args": {"timeout": 15}},
 
+        # Sep 2026 event-upload gallery: a little headroom above
+        # EventUpload's own 20 MB business-rule limit (multipart form
+        # encoding adds some overhead on top of the raw file bytes), so a
+        # legitimate ~20 MB upload doesn't get rejected by Werkzeug before
+        # portal.py's own friendlier, more specific size-check message ever
+        # gets a chance to run. Anything actually over 25 MB hits the
+        # request_entity_too_large handler below instead of a raw
+        # traceback. NOTE: nginx has its own, separate upload-size limit
+        # (client_max_body_size) that's checked before a request ever
+        # reaches Flask at all -- that needs raising to match, separately,
+        # in the nginx site config.
+        MAX_CONTENT_LENGTH=25 * 1024 * 1024,
+
         # Base URL used to build absolute links (portal event pages, the
         # logo image) in emails sent from outside a real HTTP request --
         # currently just the Aug 2026 background promotion-send worker
@@ -57,6 +70,13 @@ def create_app(config=None):
         MAIL_PASSWORD=None,
         MAIL_DEFAULT_SENDER=None,
         ADMIN_EMAIL=None,           # where RSVP notifications go
+        # Sep 2026 GS AI support widget: who escalation emails go to when a
+        # GS clicks "Escalate" on a question the AI couldn't answer. Falls
+        # back to ADMIN_EMAIL if left unset, so a Sous Commanderie that
+        # hasn't set this explicitly still gets escalations somewhere,
+        # rather than silently going nowhere -- see email.py's
+        # send_gs_support_escalation().
+        GS_SUPPORT_ESCALATION_EMAIL=None,
 
         # Broadcast Message Stream sends (the real promotion blast, and
         # the bulk-invite/resend-outstanding-invites worker) need to
@@ -125,6 +145,7 @@ def create_app(config=None):
     from .routes.portal        import portal_bp
     from .routes.webhooks      import webhooks_bp
     from .routes.broadcast     import broadcast_bp
+    from .routes.gs_support    import gs_support_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp,          url_prefix="/admin")
@@ -137,6 +158,7 @@ def create_app(config=None):
     app.register_blueprint(portal_bp,         url_prefix="/portal")
     app.register_blueprint(webhooks_bp)
     app.register_blueprint(broadcast_bp,      url_prefix="/admin/broadcast")
+    app.register_blueprint(gs_support_bp,     url_prefix="/admin/gs-support")
 
     # -- Bare-domain redirect -------------------------------------------
     @app.route("/")
@@ -149,6 +171,16 @@ def create_app(config=None):
     app.jinja_env.filters["cos_deg"] = lambda d: math.cos(math.radians(float(d)))
     app.jinja_env.filters["sin_deg"] = lambda d: math.sin(math.radians(float(d)))
     app.jinja_env.filters["person_type_label"] = lambda v: PERSON_TYPE_LABELS.get(v, v)
+
+    # -- Friendly error pages -------------------------------------------------
+    @app.errorhandler(413)
+    def request_too_large(e):
+        """Sep 2026: without this, an over-limit upload (Photos & Documents,
+        currently the only large-file upload in the app) shows a raw
+        Werkzeug/nginx error page instead of a normal flash message. Falls
+        back to the photos index if there's no referrer to bounce back to."""
+        flash("That file is too large to upload.", "error")
+        return redirect(request.referrer or url_for("portal.photos_index"))
 
     # -- Create tables on first run ------------------------------------------
     with app.app_context():
@@ -184,6 +216,9 @@ def _auto_migrate():
         ("events", "menu_finalized",  "BOOLEAN DEFAULT 0"),
         ("events", "paypal_price_per_person", "NUMERIC(10,2)"),
         ("rsvps", "officer_rank",       "INTEGER"),
+        ("persons", "affiliation",            "VARCHAR(200)"),
+        ("events",  "partner_org_name",       "VARCHAR(200)"),
+        ("events",  "partner_logo_filename",  "VARCHAR(200)"),
         ("rsvp_guests", "is_officer",    "BOOLEAN DEFAULT 0"),
         ("rsvp_guests", "officer_title", "VARCHAR(200)"),
         ("rsvp_guests", "officer_rank",  "INTEGER"),

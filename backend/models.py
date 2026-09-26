@@ -57,6 +57,15 @@ class Person(UserMixin, db.Model):
     is_officer     = db.Column(db.Boolean, default=False, nullable=False)
     officer_role   = db.Column(db.String(100))         # "Grand Senechal", "Chancelier"?
 
+    # Sep 2026 joint-event support: blank for our own people. Set to the
+    # other organization's name (e.g. "Commanderie de Bordeaux") for
+    # visitors entered only so they can attend a joint event. Affiliated
+    # people work normally inside events (RSVP, seating, allergies, name
+    # cards) but are kept out of the directory, dashboard counts, officer
+    # ranking, and member emails. A linked spouse inherits it -- see
+    # effective_affiliation.
+    affiliation    = db.Column(db.String(200), nullable=True)
+
     # Portal login
     password_hash  = db.Column(db.String(256))
     can_login      = db.Column(db.Boolean, default=False, nullable=False)
@@ -109,6 +118,18 @@ class Person(UserMixin, db.Model):
     def display_name(self):
         parts = [self.title, self.first_name, self.last_name, self.suffix]
         return " ".join(p for p in parts if p)
+
+    @property
+    def effective_affiliation(self):
+        """This person's own affiliation, or their linked partner's if they
+        have none of their own -- so a visiting Commandeur's spouse is
+        treated as part of the same visiting group without having to be
+        tagged separately."""
+        if self.affiliation:
+            return self.affiliation
+        if self.partner is not None and self.partner.affiliation:
+            return self.partner.affiliation
+        return None
 
     @property
     def formal_name(self):
@@ -199,6 +220,14 @@ class Event(db.Model):
     # "hosts" reuses the old "menu_notes" column -- unused, so repurposed
     # in place instead of adding a new column.
     hosts           = db.Column("menu_notes", db.Text)
+
+    # Sep 2026 joint-event support: when partner_org_name is set, printed
+    # materials carry the partner's name and logo alongside ours, and the
+    # booklet splits attendees into our group and theirs. The logo file
+    # lives under the instance folder (instance/partner_logos/), not in
+    # the code tree, since it's per-event data.
+    partner_org_name      = db.Column(db.String(200), nullable=True)
+    partner_logo_filename = db.Column(db.String(200), nullable=True)
     chef_name       = db.Column(db.String(200))
     paypal_link     = db.Column(db.String(500))
     paypal_price_per_person = db.Column(db.Numeric(10, 2))
@@ -1000,3 +1029,73 @@ class TableArrangement(db.Model):
     __table_args__ = (
         db.UniqueConstraint("event_id", "table_num", name="uq_event_table_num"),
     )
+
+
+# --- GS MANUAL / AI SUPPORT ------------------------------------------------
+# Grounding text for the admin-side AI support widget (Sep 2026). Single row
+# by convention (id=1) -- an "Update GS Manual" upload always overwrites it
+# in place, same full-replace pattern as the Menu/Wine List CSV uploads.
+# Deliberately stores extracted plain text, not the original file bytes:
+# the whole point is that this text gets stuffed directly into the Anthropic
+# API's context on every support question, so there's nothing to parse again
+# at question time.
+
+class GSManual(db.Model):
+    __tablename__ = "gs_manual"
+
+    id              = db.Column(db.Integer, primary_key=True)
+    text_content    = db.Column(db.Text, nullable=False)
+    source_filename = db.Column(db.String(200), nullable=True)
+    uploaded_at     = db.Column(db.DateTime, default=datetime.utcnow)
+    uploaded_by_id  = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=True)
+
+    uploaded_by     = db.relationship("Person")
+
+    @staticmethod
+    def current():
+        """The single active manual row, or None if nothing's been uploaded
+        yet. Callers (the support-question route, the manual-management
+        page) should treat None as 'no manual configured' rather than
+        erroring -- a fresh install has nothing loaded until an admin
+        uploads one."""
+        return GSManual.query.order_by(GSManual.id.desc()).first()
+
+
+# --- EVENT UPLOADS (Photos & Documents gallery) ----------------------------
+# Sep 2026. Any member can upload; every member can view; only admins can
+# delete (not even the person who uploaded it -- per the original design
+# decision). Actual files live on disk under instance/uploads/, NOT under
+# static/, so nothing here is ever reachable except through the
+# login-gated download route in portal.py -- see that route for the access
+# check. This table stores metadata only; stored_filename is a random,
+# unguessable name on disk (not the original filename) specifically so a
+# raw file URL, even if leaked, isn't useful without going through the app.
+
+ALLOWED_UPLOAD_EXTENSIONS = {"jpg", "jpeg", "png", "heic", "pdf", "docx", "pages"}
+MAX_UPLOAD_SIZE_BYTES = 20 * 1024 * 1024  # 20 MB, per the agreed design
+
+class EventUpload(db.Model):
+    __tablename__ = "event_uploads"
+
+    id                = db.Column(db.Integer, primary_key=True)
+    event_id          = db.Column(db.Integer, db.ForeignKey("events.id"), nullable=False)
+    uploaded_by_id    = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=True)
+    original_filename = db.Column(db.String(255), nullable=False)
+    stored_filename    = db.Column(db.String(64), nullable=False, unique=True)
+    content_type      = db.Column(db.String(100), nullable=False)
+    file_size         = db.Column(db.Integer, nullable=False)
+    uploaded_at       = db.Column(db.DateTime, default=datetime.utcnow)
+
+    event             = db.relationship("Event", backref=db.backref(
+                            "uploads", order_by="EventUpload.uploaded_at.desc()",
+                            cascade="all, delete-orphan"))
+    uploaded_by       = db.relationship("Person")
+
+    @property
+    def is_image(self):
+        ext = self.original_filename.rsplit(".", 1)[-1].lower()
+        return ext in ("jpg", "jpeg", "png", "heic")
+
+    @property
+    def extension(self):
+        return self.original_filename.rsplit(".", 1)[-1].lower() if "." in self.original_filename else ""
