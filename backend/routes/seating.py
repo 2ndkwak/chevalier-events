@@ -1666,13 +1666,25 @@ def build_booklet_data(event):
     # paired_ids, so _person_section_lines skips them). An officer who
     # wasn't ranked for this event now simply prints in their regular
     # section -- previously they dropped out of the booklet entirely.
+    #
+    # A spouse with no standing of their own (Partner / Partner Non-Member
+    # Chevalier) prints in their attending spouse's section -- so an
+    # Aspirant's or Honoraire's couple lands under Aspirants / Honoraire,
+    # not dragged into Les Chevaliers by the non-member half of the pair.
+    def _section_type(p):
+        if (p.person_type in ("partner", "partner_non_member_chevalier")
+                and p.partner_id in confirmed_person_ids and p.partner is not None
+                and p.partner.person_type in ("honoraire", "aspirant")):
+            return p.partner.person_type
+        return p.person_type
+
     chevalier_pool_types = ("member", "partner", "partner_member_chevalier", "partner_non_member_chevalier")
     members_people = [r.person for r in our_rsvps
-                      if r.person.person_type in chevalier_pool_types]
+                      if _section_type(r.person) in chevalier_pool_types]
     honoraire_people = [r.person for r in our_rsvps
-                        if r.person.person_type == "honoraire"]
+                        if _section_type(r.person) == "honoraire"]
     aspirant_people = [r.person for r in our_rsvps
-                       if r.person.person_type == "aspirant"]
+                       if _section_type(r.person) == "aspirant"]
 
     members = _person_section_lines(members_people, confirmed_person_ids, paired_ids)
     honoraires = _person_section_lines(honoraire_people, confirmed_person_ids, paired_ids)
