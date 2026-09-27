@@ -103,6 +103,9 @@ def _parse_csv(source):
             "notes":          row.get("notes", "") or None,
             "partner_email":  row.get("partner_email", "").lower() or None,
             "partner_name":   row.get("partner_name", "").strip() or None,
+            # Joint events: blank for your own members; the other
+            # organization's name for visitors (see Person.affiliation).
+            "affiliation":    row.get("affiliation", "").strip() or None,
             "member_since":   None,
             "_row":           i,
         }
@@ -164,6 +167,7 @@ def _import_rows(rows):
             country        = entry["country"],
             notes          = entry["notes"],
             member_since   = entry["member_since"],
+            affiliation    = entry["affiliation"],
             can_login      = False,
         )
         db.session.add(p)
@@ -196,8 +200,15 @@ def _import_rows(rows):
         if not p2:
             pn = (entry.get("partner_name") or "").strip().lower()
             if pn:
+                # Fallback to existing records only within the same
+                # organization -- a visiting Commandeur and one of our own
+                # Chevaliers can share a name (dual members), and must
+                # never be cross-linked by accident.
+                same_org = (Person.affiliation == entry["affiliation"]) if entry.get("affiliation") \
+                    else Person.affiliation.is_(None)
                 p2 = name_map.get(pn) or Person.query.filter(
-                    db.func.lower(Person.first_name + " " + Person.last_name) == pn
+                    db.func.lower(Person.first_name + " " + Person.last_name) == pn,
+                    same_org,
                 ).first()
 
         if p2 and not p2.partner_id:
@@ -221,7 +232,7 @@ def download_template():
         "gender", "email", "phone", "is_officer", "officer_role",
         "member_since", "address_line1", "address_line2", "city",
         "province_state", "postal_code", "country",
-        "partner_email", "partner_name", "notes",
+        "partner_email", "partner_name", "affiliation", "notes",
     ]
 
     # One header row + two example rows
@@ -234,7 +245,7 @@ def download_template():
             "member_since": "2015", "address_line1": "123 Rue du Vin",
             "address_line2": "", "city": "Cleveland", "province_state": "OH",
             "postal_code": "44101", "country": "USA",
-            "partner_email": "", "partner_name": "Marie Dupont", "notes": "",
+            "partner_email": "", "partner_name": "Marie Dupont", "affiliation": "", "notes": "",
         },
         {
             "person_type": "partner", "title": "Mrs.", "first_name": "Marie",
@@ -243,7 +254,7 @@ def download_template():
             "is_officer": "No", "officer_role": "",
             "member_since": "", "address_line1": "", "address_line2": "",
             "city": "", "province_state": "", "postal_code": "", "country": "",
-            "partner_email": "", "partner_name": "Jean Dupont", "notes": "",
+            "partner_email": "", "partner_name": "Jean Dupont", "affiliation": "", "notes": "",
         },
     ]
 

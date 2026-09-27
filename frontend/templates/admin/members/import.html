@@ -71,6 +71,7 @@
         ('country',       'No',  ''),
         ('partner_email', 'No',  'Email of partner record — links them automatically'),
         ('partner_name',  'No',  'Full name of partner (First Last) — use when partner has no email'),
+        ('affiliation',   'No',  'Leave blank for your own members. For visitors from another organization attending a joint event, their organization, e.g. Commanderie de Bordeaux'),
         ('notes',         'No',  'Free text'),
       ] %}
       <tr>
@@ -105,7 +106,7 @@
       <thead>
         <tr>
           <th>Name</th><th>Type</th><th>Gender</th><th>Email</th>
-          <th>Officer</th><th>Member since</th><th>Partner email</th>
+          <th>Officer</th><th>Member since</th><th>Partner email</th><th>Affiliation</th>
         </tr>
       </thead>
       <tbody>
@@ -125,6 +126,7 @@
           </td>
           <td class="text-muted">{{ r.member_since or '—' }}</td>
           <td class="text-muted">{{ r.partner_email or '—' }}</td>
+          <td>{% if r.affiliation %}<span class="badge badge-muted">{{ r.affiliation }}</span>{% else %}<span class="text-muted">—</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>

@@ -41,11 +41,15 @@ def list_members():
             db.or_(Person.first_name.ilike(like),
                    Person.last_name.ilike(like),
                    Person.email.ilike(like),
-                   Person.officer_role.ilike(like))
+                   Person.officer_role.ilike(like),
+                   Person.affiliation.ilike(like))
         )
+    # Joint-event visitors (Person.affiliation set) are hidden unless asked
+    # for: "visitor" = every organization, "visitor:<name>" = just that one.
     if ftype == "visitor":
-        # People from another organization, entered only for a joint event
         query = query.filter(Person.affiliation.isnot(None))
+    elif ftype.startswith("visitor:"):
+        query = query.filter(Person.affiliation == ftype[len("visitor:"):])
     else:
         query = query.filter(Person.affiliation.is_(None))
     if ftype in ('member', 'honoraire', 'aspirant', 'partner', 'partner_member_chevalier', 'partner_non_member_chevalier'):
@@ -61,8 +65,24 @@ def list_members():
         query = query.order_by(Person.last_name, Person.first_name)
 
     persons = query.all()
+
+    # Partners normally appear only indented under the member they're
+    # linked to. Anyone of a partner type whose linked member ISN'T in this
+    # listing -- unlinked (a single visitor), or their member filtered out
+    # by a search -- would otherwise be invisible, so they get a group of
+    # their own.
+    listed_ids = {p.id for p in persons}
+    standalone_ids = [p.id for p in persons
+                      if p.person_type in ("partner", "partner_non_member_chevalier")
+                      and not (p.partner_id and p.partner_id in listed_ids
+                               and p.partner.person_type not in ("partner", "partner_non_member_chevalier"))]
+
+    organizations = [row[0] for row in db.session.query(Person.affiliation)
+                     .filter(Person.affiliation.isnot(None)).distinct()
+                     .order_by(Person.affiliation).all()]
     return render_template("admin/members/list.html",
-                           persons=persons, q=q, ftype=ftype, sort=sort)
+                           persons=persons, q=q, ftype=ftype, sort=sort,
+                           standalone_ids=standalone_ids, organizations=organizations)
 
 
 # --- ADD ----------------------------------------------------------------------
