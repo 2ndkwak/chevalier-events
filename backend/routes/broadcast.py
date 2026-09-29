@@ -42,6 +42,26 @@ ADHOC_FILTER_GROUPS = [
 ADHOC_ELIGIBLE_TYPES = [t for _, _, types in ADHOC_FILTER_GROUPS for t in types]
 
 
+class _RawEmailRecipient:
+    """Minimal stand-in for a Person, for a manually-typed email address
+    with no Person record at all (Sep 2026, "Email Attendees"). Only
+    exposes what send_adhoc_email() and greeting() actually read --
+    .email, .first_name, .gender, .id -- so it can be passed anywhere a
+    Person is expected without a wider change. No first name to
+    address them by, so greeting() correctly falls back to its plain
+    "Dear" form (gender left None); .id is a stable per-run synthetic
+    value, not a real database id -- fine, since nothing persists it
+    (no AdHocEmailSend row is created for these) and it only ever
+    appears in a message's own X-PM-Metadata-person-id header, which
+    that person's own reply/open never gets looked up against anyway.
+    """
+    def __init__(self, email):
+        self.email = email
+        self.first_name = "there"
+        self.gender = None
+        self.id = f"manual:{email}"
+
+
 @broadcast_bp.route("/compose")
 @login_required
 @admin_required
@@ -73,7 +93,7 @@ def compose():
                            roster=roster, group_counts=group_counts)
 
 
-def _send_adhoc_batch(app, adhoc_email_id, person_ids):
+def _send_adhoc_batch(app, adhoc_email_id, person_ids, extra_emails=None, attachment=None):
     """The actual ad-hoc-email work, run on a background thread so the
     request that kicks it off returns immediately -- same reasoning,
     and the same shape, as _send_promotion_batch (routes/events.py) and
@@ -82,7 +102,23 @@ def _send_adhoc_batch(app, adhoc_email_id, person_ids):
     and committed right away (not batched at the end) so an interrupted
     run leaves accurate partial progress and can simply be re-run,
     skipping anyone already logged in AdHocEmailSend, rather than
-    risking a duplicate or a silent gap."""
+    risking a duplicate or a silent gap.
+
+    `extra_emails` (Sep 2026, "Email Attendees" -- routes/events.py):
+    raw email addresses typed in at compose time, for reaching someone
+    with no Person record at all. Sent in the same batch, but NOT
+    logged to AdHocEmailSend -- that table's person_id column is a
+    required foreign key to persons.id, and there's no Person row for
+    a manually-typed address to log against. Practically: an
+    interrupted batch will safely resume for person_ids (nobody
+    re-emailed), but could re-send to an already-sent extra_email on a
+    re-run. Accepted -- this is a short, deliberately-entered list, not
+    the kind of large recurring one this protection exists for.
+
+    `attachment` (Sep 2026): optional (filename, content_type,
+    data_bytes) tuple, read from the upload before this thread started
+    (a Flask FileStorage object isn't valid outside the request that
+    created it) and attached identically to every recipient's copy."""
     base_url = app.config.get("SITE_BASE_URL", "http://localhost:5000")
     with app.app_context(), app.test_request_context(base_url=base_url):
         from ..email import send_adhoc_email
@@ -95,7 +131,10 @@ def _send_adhoc_batch(app, adhoc_email_id, person_ids):
                                  .filter_by(adhoc_email_id=adhoc_email_id).all()}
             remaining_ids = [pid for pid in person_ids if pid not in already_sent_ids]
             print(f"[adhoc email] email {adhoc_email_id}: {len(remaining_ids)} "
-                  f"of {len(person_ids)} recipient(s) remaining", flush=True)
+                  f"of {len(person_ids)} person recipient(s) remaining", flush=True)
+            if extra_emails:
+                print(f"[adhoc email] email {adhoc_email_id}: {len(extra_emails)} "
+                      f"manually-entered recipient(s) (not resumability-tracked)", flush=True)
 
             from ..postmark import broadcast_connection
             broadcast_headers = {"X-PM-Message-Stream": app.config["POSTMARK_BROADCAST_STREAM_ID"]}
@@ -108,7 +147,7 @@ def _send_adhoc_batch(app, adhoc_email_id, person_ids):
                     try:
                         send_adhoc_email(adhoc_email.subject, adhoc_email.body_html, person,
                                           adhoc_email_id=adhoc_email.id, connection=connection,
-                                          extra_headers=broadcast_headers)
+                                          extra_headers=broadcast_headers, attachment=attachment)
                         db.session.add(AdHocEmailSend(adhoc_email_id=adhoc_email.id,
                                                        person_id=person.id, sent_at=utcnow()))
                         db.session.commit()
@@ -122,6 +161,19 @@ def _send_adhoc_batch(app, adhoc_email_id, person_ids):
                         # already fixed for).
                         print(f"[adhoc email] FAILED for person {person_id} "
                               f"({person.email}):", flush=True)
+                        traceback.print_exc()
+                        continue
+
+                for raw_email in (extra_emails or []):
+                    try:
+                        recipient = _RawEmailRecipient(raw_email)
+                        send_adhoc_email(adhoc_email.subject, adhoc_email.body_html, recipient,
+                                          adhoc_email_id=adhoc_email.id, connection=connection,
+                                          extra_headers=broadcast_headers, attachment=attachment)
+                        sent_count += 1
+                    except Exception:
+                        print(f"[adhoc email] FAILED for manually-entered address "
+                              f"({raw_email}):", flush=True)
                         traceback.print_exc()
                         continue
 

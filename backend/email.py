@@ -249,12 +249,20 @@ Confrerie des Chevaliers du Tastevin
 
 
 def send_adhoc_email(subject, body_html, person, adhoc_email_id=None,
-                      connection=None, extra_headers=None):
+                      connection=None, extra_headers=None, attachment=None):
     """Send a free-text broadcast email (Aug 2026 "Send Email" feature)
     to a single member/partner, using the same branded shell as the
     event promotion email. `body_html` is Quill-produced HTML, same
     trust boundary as Event.description -- rendered with |safe in
     email/adhoc.html.
+
+    `attachment` (Sep 2026, "Email Attendees" -- routes/events.py):
+    optional (filename, content_type, data_bytes) tuple, attached to
+    every recipient's copy identically. Caller is responsible for
+    reading the upload into memory before the request context ends and
+    for enforcing Postmark's size limit (10 MB total message size,
+    post-base64-encoding) -- this function just attaches whatever it's
+    given.
 
     `adhoc_email_id` is omitted for a "send test copy to myself" send
     (see routes/broadcast.py's send_test()) -- a test send is never
@@ -308,6 +316,9 @@ Confrerie des Chevaliers du Tastevin
 
     msg = Message(subject=subject, recipients=[person.email], body=body, html=html_body,
                   extra_headers=headers)
+    if attachment is not None:
+        filename, content_type, data = attachment
+        msg.attach(filename=filename, content_type=content_type, data=data)
     _send(msg, sender_key="MAIL_SENDER_ADMIN", connection=connection)
 
 

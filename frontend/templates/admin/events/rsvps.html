@@ -5,6 +5,7 @@
 <div class="page-header">
   <h1>RSVPs — {{ event.title }}</h1>
   <div style="display:flex; gap:.5rem;">
+    <a href="{{ url_for('events.email_attendees', event_id=event.id) }}" class="btn btn-gold">Email Attendees</a>
     <a href="{{ url_for('events.export_rsvps_csv', event_id=event.id) }}" class="btn btn-outline">[Download] Export CSV</a>
     <a href="{{ url_for('events.edit_event', event_id=event.id) }}" class="btn btn-outline">← Back to event</a>
   </div>

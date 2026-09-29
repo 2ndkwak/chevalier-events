@@ -917,6 +917,13 @@ class AdHocEmail(db.Model):
     body_html        = db.Column(db.Text, nullable=False)
     sender_id        = db.Column(db.Integer, db.ForeignKey("persons.id"), nullable=True)
     recipient_count  = db.Column(db.Integer, nullable=False, default=0)
+    # Sep 2026: how many of recipient_count were manually-typed addresses
+    # (routes/events.py's email_attendees()) rather than Person records --
+    # these deliberately never get an AdHocEmailSend row (see that
+    # function's docstring), so the Email History "still pending" check
+    # needs to exclude them, or every send with a manual address looks
+    # permanently stuck even after it fully succeeds.
+    extra_recipient_count = db.Column(db.Integer, nullable=False, default=0)
     created_at       = db.Column(db.DateTime, default=datetime.utcnow)
 
     sender           = db.relationship("Person")

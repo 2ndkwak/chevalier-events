@@ -1,7 +1,7 @@
 from flask import (Blueprint, render_template, redirect, url_for,
                    request, flash, jsonify, current_app)
 from flask_login import login_required, current_user
-from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag, EventAllergyOff, EventPromotionSend
+from ..models import db, Event, RSVP, RSVPGuest, Person, DietaryTag, EventAllergyOff, EventPromotionSend, AdHocEmail
 from ..routes.admin import admin_required
 from datetime import datetime, timedelta
 from ..util import utcnow
@@ -318,6 +318,124 @@ def export_rsvps_csv(event_id):
         mimetype="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
+
+
+# --- EMAIL ATTENDEES ----------------------------------------------------------
+
+@events_bp.route("/<int:event_id>/email-attendees", methods=["GET", "POST"])
+@login_required
+@admin_required
+def email_attendees(event_id):
+    """"Email Attendees" (Sep 2026) -- launched from the RSVP list page,
+    a per-event version of the existing "Send Email" broadcast feature
+    (routes/broadcast.py), reusing all the same underlying send/log
+    infrastructure rather than duplicating it. Recipients are built from
+    this event's own RSVPs, not from member-type checkboxes: confirmed
+    by default, waitlist optional (checkbox on the compose screen).
+    Scoped to members/partners with a Person record and an email on
+    file -- RSVP guests (no account, no email field of their own) are
+    out of scope; a joint event's other-organization attendees are rare
+    enough to route through the hosting SC's own contact instead.
+
+    Also supports (Sep 2026): a single optional file attachment, sent
+    identically to every recipient, and a manually-typed list of extra
+    email addresses for anyone with no Person record at all -- both
+    read from the request and validated here, before the background
+    thread starts, since neither an uploaded file nor request.form is
+    valid once this request ends."""
+    event = Event.query.get_or_404(event_id)
+
+    # Comfortably under Postmark's real limit (10 MB total message size,
+    # AFTER base64 encoding, which inflates raw bytes by ~1/3) -- 7 MB
+    # of raw file leaves headroom for that inflation plus the email
+    # body/headers, rather than cutting it close.
+    MAX_ATTACHMENT_BYTES = 7 * 1024 * 1024
+
+    def _recipients_for(include_waitlist):
+        statuses = ["confirmed"] + (["waitlist"] if include_waitlist else [])
+        rsvps = RSVP.query.filter(RSVP.event_id == event_id,
+                                   RSVP.status.in_(statuses)).all()
+        person_ids = []
+        no_email_names = []
+        for r in rsvps:
+            if not r.person:
+                continue
+            if r.person.email:
+                person_ids.append(r.person.id)
+            else:
+                no_email_names.append(r.person.display_name)
+        # de-dupe defensively -- shouldn't happen (one RSVP per person per
+        # event) but a cheap, harmless guard against ever double-sending
+        person_ids = list(dict.fromkeys(person_ids))
+        return person_ids, no_email_names
+
+    if request.method == "GET":
+        person_ids, no_email_names = _recipients_for(include_waitlist=False)
+        person_ids_wl, no_email_names_wl = _recipients_for(include_waitlist=True)
+        return render_template("admin/events/email_attendees.html", event=event,
+                               confirmed_count=len(person_ids),
+                               with_waitlist_count=len(person_ids_wl),
+                               no_email_names=sorted(set(no_email_names)))
+
+    subject = (request.form.get("subject") or "").strip()
+    body_html = request.form.get("body") or ""
+    include_waitlist = request.form.get("include_waitlist") == "1"
+
+    if not subject:
+        flash("Subject is required.", "error")
+        return redirect(url_for("events.email_attendees", event_id=event_id))
+
+    # Manually-typed extra addresses: one per line or comma-separated,
+    # deliberately light validation (just "has an @ and something on
+    # both sides") -- this is an admin typing in a colleague's address,
+    # not user-submitted data that needs to be defended against.
+    import re
+    raw_extra = request.form.get("extra_emails", "")
+    extra_emails = []
+    for chunk in re.split(r"[,\n\r]+", raw_extra):
+        addr = chunk.strip()
+        if addr and re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", addr):
+            extra_emails.append(addr)
+    extra_emails = list(dict.fromkeys(extra_emails))  # de-dupe, preserve order
+
+    # Attachment, if any -- read fully into memory now, since the
+    # uploaded file object is only valid for the life of this request,
+    # not inside the background thread that does the actual sending.
+    attachment = None
+    upload = request.files.get("attachment")
+    if upload and upload.filename:
+        data = upload.read()
+        if len(data) > MAX_ATTACHMENT_BYTES:
+            flash(f"That attachment is too large ({len(data) / (1024*1024):.1f} MB) -- "
+                  f"please keep it under {MAX_ATTACHMENT_BYTES // (1024*1024)} MB.", "error")
+            return redirect(url_for("events.email_attendees", event_id=event_id))
+        attachment = (upload.filename, upload.content_type or "application/octet-stream", data)
+
+    person_ids, _ = _recipients_for(include_waitlist)
+    total = len(person_ids) + len(extra_emails)
+    if total == 0:
+        flash("No attendees with an email address on file for this event, "
+              "and no additional addresses entered.", "error")
+        return redirect(url_for("events.email_attendees", event_id=event_id))
+
+    adhoc_email = AdHocEmail(subject=subject, body_html=body_html,
+                             sender_id=current_user.id,
+                             recipient_count=total,
+                             extra_recipient_count=len(extra_emails),
+                             created_at=utcnow())
+    db.session.add(adhoc_email)
+    db.session.commit()
+
+    from .broadcast import _send_adhoc_batch
+    app = current_app._get_current_object()
+    thread = threading.Thread(target=_send_adhoc_batch,
+                              args=(app, adhoc_email.id, person_ids, extra_emails, attachment),
+                              daemon=True)
+    thread.start()
+
+    flash(f"Sending to {total} attendee(s) in the background -- "
+          f"see Email History for delivery status as it comes in.", "success")
+    return redirect(url_for("broadcast.history"))
 
 
 # --- ADMIN: MANUALLY ADD RSVP ------------------------------------------------

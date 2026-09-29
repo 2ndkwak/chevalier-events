@@ -62,10 +62,17 @@
         {% endfor %}
       </tbody>
     </table>
-    {% if email.sends|length < email.recipient_count %}
+    {% set trackable_count = email.recipient_count - email.extra_recipient_count %}
+    {% if email.sends|length < trackable_count %}
     <p class="text-muted text-sm" style="margin-top:.6rem;">
-      {{ email.recipient_count - email.sends|length }} recipient(s) targeted but not yet sent
+      {{ trackable_count - email.sends|length }} recipient(s) targeted but not yet sent
       (send may still be in progress, or a send-level error occurred — check server logs).
+    </p>
+    {% endif %}
+    {% if email.extra_recipient_count %}
+    <p class="text-muted text-sm" style="margin-top:.4rem;">
+      Also sent to {{ email.extra_recipient_count }} manually-entered address(es) — not individually
+      tracked here; check server logs if you need to confirm those specifically went out.
     </p>
     {% endif %}
   </div>
